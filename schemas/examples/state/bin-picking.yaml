@@ -1,0 +1,37 @@
+# Bin picking 所需状态（plan §7.3），供可观测性分析使用
+schemaVersion: "0.1.0"
+taskId: task-pick-object
+states:
+  - id: object_pose
+    description: 目标零件的 6D 位姿（料箱坐标系）
+    requiredBy: [EstimatePose, PlanMotion, GraspObject]
+    accuracy: { position_mm: 3, orientation_deg: 2 }
+    update_rate_hz_min: 10
+    latency_ms_max: 100
+    confidence_min: 0.95
+    coverage_min: 0.9
+  - id: robot_pose
+    description: 机器人关节/末端位姿
+    requiredBy: [PlanMotion, ReachObject]
+    accuracy: { position_mm: 0.1 }
+    update_rate_hz_min: 100
+    latency_ms_max: 10
+  - id: end_effector_pose
+    requiredBy: [GraspObject, PlaceObject]
+    accuracy: { position_mm: 0.5, orientation_deg: 1 }
+    update_rate_hz_min: 50
+    latency_ms_max: 20
+  - id: obstacle_geometry
+    description: 料箱壁与堆叠零件的几何
+    requiredBy: [AvoidCollision, PlanMotion]
+    coverage_min: 0.95
+  - id: contact_force
+    description: 抓取接触力（损伤率 <0.1% 要求）
+    requiredBy: [GraspObject, VerifyGrasp]
+    accuracy: { position_mm: 0.5 }   # 0.5N 力分辨率
+    update_rate_hz_min: 100
+    latency_ms_max: 20
+  - id: grasp_state
+    description: 抓取成功/滑移状态
+    requiredBy: [VerifyGrasp]
+    confidence_min: 0.99

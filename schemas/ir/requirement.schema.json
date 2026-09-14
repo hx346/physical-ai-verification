@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roboverify.dev/schemas/ir/requirement.schema.json",
+  "title": "Requirement IR",
+  "description": "Executable requirement. Natural language must be converted into this form before entering the system; the kernel only consumes this structure.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "metric", "operator", "value"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string", "pattern": "^R[0-9A-Za-z._-]+$", "description": "Stable requirement identifier, e.g. R001" },
+    "projectId": { "type": ["string", "null"] },
+    "metric": {
+      "enum": [
+        "position_accuracy",
+        "orientation_accuracy",
+        "picking_success_rate",
+        "cycle_time",
+        "reach",
+        "payload",
+        "collision_free_rate",
+        "end_to_end_latency",
+        "fov_coverage",
+        "workspace_coverage"
+      ]
+    },
+    "operator": { "enum": [">=", ">", "<=", "<", "=="] },
+    "value": { "type": "number", "description": "Threshold value in the given unit" },
+    "unit": { "type": "string", "examples": ["mm", "deg", "s", "ms", "m", "kg", "ratio"] },
+    "percentile": { "enum": ["mean", "P50", "P90", "P95", "P99", "max"], "default": "mean" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "Required confidence level for the verdict, e.g. 0.95" },
+    "priority": { "enum": ["critical", "high", "normal", "low"], "default": "normal" },
+    "source": { "enum": ["nl", "manual", "import"], "default": "manual" },
+    "description": { "type": "string" }
+  }
+}

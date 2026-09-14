@@ -15,5 +15,11 @@ com.roboverify.platform
 ├── audit / auth / common
 ```
 
-技术要点：MyBatis-Plus · Flyway · Sa-Token · springdoc-openapi · logback JSON + traceId MDC。
+技术要点（M0 落地）：Flyway · Sa-Token · **JdbcTemplate**（MyBatis-Plus 3.5.7 的 boot3 starter 在 Boot 4.1 下自动配置未生效，按 ADR-0001 预案降级，Boot4 适配版发布后在 M1 回归） · logback JSON（logstash-encoder）+ traceId MDC · 部署为 Docker 容器（见根目录 compose）。
+springdoc-openapi 同样待 Boot4 兼容版本，M1 接入。
+
+运行（Docker，正式形态）：`deploy/docker-compose.yml` 的 `backend` 服务。
+本地开发调试：`./mvnw spring-boot:run`（默认 8090，8080 常被占用）。
+默认账号：admin / roboverify123（V2__seed.sql，生产必须改密）。
+
 设计详见 [docs/architecture.md](../docs/architecture.md)。

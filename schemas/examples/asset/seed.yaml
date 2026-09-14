@@ -1,0 +1,127 @@
+# 种子资产（V0.1 范围：3 机器人 / 3 相机 / 2 夹爪，plan §40）
+# 注意：全部参数 provenance=datasheet 且为占位数值，M0~M1 内替换为带 sourceRef 的真实手册数据，
+#       并逐步补充 literature/measured 级条目（ADR-0004）。
+- schemaVersion: "0.1.0"
+  id: asset-robot-a
+  category: robot
+  vendor: "SEED-PLACEHOLDER"
+  model: "6R-900 通用六轴"
+  cost_cny: 85000
+  params:
+    - { name: dof, value: 6, provenance: datasheet }
+    - { name: reach_mm, value: 900, provenance: datasheet }
+    - { name: payload_kg, value: 5, provenance: datasheet }
+    - { name: repeatability_mm, value: 0.03, provenance: datasheet }
+    - { name: absolute_accuracy_mm, value: 0.5, provenance: datasheet, note: 厂商宣称值，偏乐观 }
+    - { name: max_tcp_speed_mm_s, value: 1000, provenance: datasheet }
+    - { name: controller_latency_ms, value: 11, provenance: datasheet }
+
+- schemaVersion: "0.1.0"
+  id: asset-robot-b
+  category: robot
+  vendor: "SEED-PLACEHOLDER"
+  model: "6R-1100 长臂六轴"
+  cost_cny: 110000
+  params:
+    - { name: dof, value: 6, provenance: datasheet }
+    - { name: reach_mm, value: 1100, provenance: datasheet }
+    - { name: payload_kg, value: 10, provenance: datasheet }
+    - { name: repeatability_mm, value: 0.05, provenance: datasheet }
+    - { name: absolute_accuracy_mm, value: 0.8, provenance: datasheet }
+    - { name: max_tcp_speed_mm_s, value: 1200, provenance: datasheet }
+    - { name: controller_latency_ms, value: 12, provenance: datasheet }
+
+- schemaVersion: "0.1.0"
+  id: asset-robot-c
+  category: robot
+  vendor: "SEED-PLACEHOLDER"
+  model: "6R-850 紧凑六轴"
+  cost_cny: 68000
+  params:
+    - { name: dof, value: 6, provenance: datasheet }
+    - { name: reach_mm, value: 850, provenance: datasheet }
+    - { name: payload_kg, value: 4, provenance: datasheet }
+    - { name: repeatability_mm, value: 0.02, provenance: datasheet }
+    - { name: absolute_accuracy_mm, value: 0.4, provenance: datasheet }
+    - { name: max_tcp_speed_mm_s, value: 900, provenance: datasheet }
+    - { name: controller_latency_ms, value: 10, provenance: datasheet }
+
+- schemaVersion: "0.1.0"
+  id: asset-rgb-cam-b
+  category: camera
+  vendor: "SEED-PLACEHOLDER"
+  model: "RGB-5MP-GigE 面阵相机"
+  cost_cny: 4500
+  params:
+    - { name: resolution, value: "2448x2048", provenance: datasheet }
+    - { name: fps, value: 30, provenance: datasheet }
+    - { name: fov_deg, value: 60, provenance: datasheet }
+    - { name: interface, value: GigE, provenance: datasheet }
+    - { name: latency_ms, value: 18, provenance: datasheet }
+    - { name: depth_available, value: false, provenance: datasheet, note: 单目 2D，无度量深度 }
+
+- schemaVersion: "0.1.0"
+  id: asset-rgbd-cam-c
+  category: camera
+  vendor: "SEED-PLACEHOLDER"
+  model: "RGB-D 深度相机 C"
+  cost_cny: 8500
+  params:
+    - { name: resolution, value: "1280x720", provenance: datasheet }
+    - { name: fps, value: 30, provenance: datasheet }
+    - { name: fov_deg, value: 87, provenance: datasheet }
+    - { name: range_mm, value: { min: 300, max: 3000 }, provenance: datasheet }
+    - { name: interface, value: USB3, provenance: datasheet }
+    - { name: latency_ms, value: 22, provenance: datasheet }
+    - { name: depth_available, value: true, provenance: datasheet }
+    - name: depth_sigma_mm
+      value: 1.2
+      unit: mm
+      provenance: datasheet
+      conditions: { distance_mm: 700, surface: semi }
+      note: 手册标称（1σ），反射金属表面实际偏差更大，M1 用 literature 级修正
+
+- schemaVersion: "0.1.0"
+  id: asset-rgbd-cam-d
+  category: camera
+  vendor: "SEED-PLACEHOLDER"
+  model: "RGB-D 深度相机 D（高精度型）"
+  cost_cny: 26000
+  params:
+    - { name: resolution, value: "1280x1024", provenance: datasheet }
+    - { name: fps, value: 60, provenance: datasheet }
+    - { name: fov_deg, value: 70, provenance: datasheet }
+    - { name: range_mm, value: { min: 200, max: 2000 }, provenance: datasheet }
+    - { name: interface, value: GigE, provenance: datasheet }
+    - { name: latency_ms, value: 15, provenance: datasheet }
+    - { name: depth_available, value: true, provenance: datasheet }
+    - name: depth_sigma_mm
+      value: 0.4
+      unit: mm
+      provenance: datasheet
+      conditions: { distance_mm: 700, surface: semi }
+
+- schemaVersion: "0.1.0"
+  id: asset-gripper-b
+  category: gripper
+  vendor: "SEED-PLACEHOLDER"
+  model: "2 指平行夹爪 B"
+  cost_cny: 12000
+  params:
+    - { name: grip_force_n, value: 80, provenance: datasheet }
+    - { name: stroke_mm, value: 60, provenance: datasheet }
+    - { name: control_latency_ms, value: 15, provenance: datasheet }
+    - { name: repeatability_mm, value: 0.05, provenance: datasheet }
+    - { name: feedback, value: "position+force", provenance: datasheet }
+
+- schemaVersion: "0.1.0"
+  id: asset-gripper-h
+  category: gripper
+  vendor: "SEED-PLACEHOLDER"
+  model: "真空吸盘 H"
+  cost_cny: 6000
+  params:
+    - { name: type, value: vacuum, provenance: datasheet }
+    - { name: payload_kg, value: 2, provenance: datasheet, note: 仅适用于平整表面 }
+    - { name: control_latency_ms, value: 30, provenance: datasheet }
+    - { name: feedback, value: none, provenance: datasheet }

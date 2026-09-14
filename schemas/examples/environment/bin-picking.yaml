@@ -1,0 +1,26 @@
+# Bin picking 环境（plan §5 Step 1）
+schemaVersion: "0.1.0"
+id: env-bin-picking-demo
+projectId: proj-bin-picking-demo
+bin:
+  width_mm: 600
+  height_mm: 300
+  depth_mm: 400
+  wall_thickness_mm: 2
+  material: steel
+parts:
+  - name: engine-part
+    size_mm: { min: 20, max: 80 }
+    material: steel
+    reflectivity: semi
+    mass_g: { min: 50, max: 800 }
+    stack: random
+illumination:
+  lux: { min: 500, max: 5000 }
+  source: mixed
+occlusion:
+  percent: { min: 0, max: 70 }
+temperature_c: { min: 15, max: 40 }
+network:
+  latency_ms: { min: 5, max: 200 }
+  jitter_ms_max: 20

@@ -1,0 +1,20 @@
+schemaVersion: "0.1.0"
+id: sim-bin-picking-0001
+scene: bin_picking
+robot:
+  assetId: asset-robot-a
+  home_joints: [0, -30, 60, 0, 30, 0]
+sensors:
+  - componentId: cam-overhead-1
+    type: rgbd
+    pose: { x: 0.0, y: 0.0, z: 1.2, roll: 0, pitch: 90, yaw: 0 }
+    params: { resolution: "1280x720", fps: 30, fov_deg: 87 }
+environment:
+  environment_ref: env-bin-picking-demo
+  seed: 42
+  overrides: { illumination_lux: 2400, occlusion_percent: 35 }
+script:
+  type: scripted_pick
+  params: { approach_speed_mm_s: 200, grasp_force_n: 60 }
+metrics_to_collect: [pick_success, cycle_time_s, collision_count, position_error_mm]
+timeout_s: 120

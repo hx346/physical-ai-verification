@@ -80,7 +80,7 @@ Example — the page the whole product hangs on:
                │           └─────────┬─────────┘
                ▼                     ▼
         ┌────────────────────────────────────┐
-        │  PostgreSQL (JSONB)  ·  MinIO      │  IRs · evidence · URDF/CAD · logs · reports
+        │  PostgreSQL (JSONB)  ·  Seafile    │  IRs · evidence · URDF/CAD · logs · reports
         └────────────────────────────────────┘
 ```
 
@@ -90,12 +90,12 @@ Full design: [`docs/architecture.md`](./docs/architecture.md) · Decisions: [`do
 
 | Layer | Choice |
 |---|---|
-| Platform API | Java 25 (LTS) · Spring Boot 4.x · MyBatis-Plus · Flyway · Sa-Token · springdoc-openapi |
+| Platform API | Java 25 (LTS) · Spring Boot 4.x · Flyway · Sa-Token · JdbcTemplate in M0 (MyBatis-Plus returns once it ships a Boot 4 starter) |
 | Engineering runtime | Python 3.12+ · FastAPI · NumPy / SciPy / Pandas · Pydantic v2 |
 | Kinematics & collision | Pinocchio · python-fcl / trimesh |
 | Sensitivity & DOE | SALib · (later: pymoo · Optuna) |
 | Simulation | gz-sim + ROS 2 in Linux Docker behind an adapter SPI (Isaac Sim at V0.5) |
-| Data | PostgreSQL 17+ (relational + JSONB) · MinIO (URDF / CAD / datasets / logs / reports) |
+| Data | PostgreSQL 17+ (relational + JSONB) · Seafile via WebDAV behind an ObjectStore SPI (URDF / CAD / datasets / logs / reports) |
 | Queue | PostgreSQL `FOR UPDATE SKIP LOCKED` (Temporal only when scale demands it) |
 | Frontend | Vue 3 · TypeScript · Vite · Ant Design Vue · ECharts |
 | LLM | Provider-agnostic adapter, optional — core flows work without any LLM |
@@ -118,18 +118,24 @@ Full design: [`docs/architecture.md`](./docs/architecture.md) · Decisions: [`do
 └── deploy/                       docker-compose, env templates, deployment docs
 ```
 
-## Quick Start (infrastructure)
+## Quick Start (Docker, full stack)
 
-The application services land with milestone M0. The data layer runs today:
+Everything runs in containers — nothing is deployed on the host except Docker:
 
 ```bash
 git clone git@github.com:hx346/physical-ai-verification.git
 cd physical-ai-verification/deploy
-docker compose up -d
+docker compose up -d postgres backend runtime frontend   # build images on first run
 
-# PostgreSQL   -> localhost:15432   (roboverify / roboverify, db: roboverify)
-# MinIO console-> http://localhost:19001  (roboverify / roboverify)
+# Web UI       -> http://localhost:18000   (admin / roboverify123)
+# Backend API  -> http://localhost:18090/actuator/health
+# Runtime      -> http://localhost:18081/health
+# PostgreSQL   -> localhost:15432          (roboverify / roboverify)
+docker compose up -d            # optional: also start the Seafile object-store stack
+# Seafile Web  -> http://localhost:18080  (admin@roboverify.local / roboverify123)
 ```
+
+After changing code: `docker compose build backend runtime frontend && docker compose up -d`.
 
 ## Roadmap
 

@@ -1,0 +1,52 @@
+spring:
+  application:
+    name: platform
+  datasource:
+    url: ${ROBOVERIFY_DB_URL:jdbc:postgresql://localhost:15432/roboverify}
+    username: ${ROBOVERIFY_DB_USER:roboverify}
+    password: ${ROBOVERIFY_DB_PASSWORD:roboverify}
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 5000
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  # 8080 常被本机其他服务占用（如 aro-app），平台固定 8090
+  port: 8090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+# Sa-Token：默认内存会话（单实例 M0 足够；集群化时切 Redis）
+sa-token:
+  token-name: Authorization
+  timeout: 86400
+  active-timeout: -1
+  is-concurrent: true
+  is-read-cookie: false
+  token-style: uuid
+  is-log: false
+
+roboverify:
+  # Python 工程运行时地址（ADR-0001 契约）
+  runtime:
+    base-url: ${ROBOVERIFY_RUNTIME_URL:http://localhost:8081}
+  # 对象存储：M0 仅本地实现占位；Seafile/WebDAV 适配器 M2 落地（ADR-0005）
+  storage:
+    type: ${ROBOVERIFY_STORAGE_TYPE:local}
+    local:
+      base-dir: ${ROBOVERIFY_STORAGE_LOCAL_DIR:./data/objects}
+    seafile:
+      base-url: ${ROBOVERIFY_SEAFILE_URL:}
+      username: ${ROBOVERIFY_SEAFILE_USER:}
+      password: ${ROBOVERIFY_SEAFILE_PASSWORD:}
+      base-path: ${ROBOVERIFY_SEAFILE_BASE_PATH:/roboverify}
+
+logging:
+  level:
+    com.roboverify: INFO

@@ -1,0 +1,19 @@
+schemaVersion: "0.1.0"
+id: task-pick-object
+type: PickObject
+target:
+  partRef: engine-part
+  destination: outbound-conveyor
+  throughput_per_hour: 600
+preconditions:
+  - camera_streaming
+  - hand_eye_calibrated
+successCriteria: [R001, R002, R003, R004, R005]
+failureCriteria:
+  - part_dropped
+  - part_damaged
+  - gripper_collision
+constraints:
+  - { name: max_tcp_speed, value: 500, unit: mm/s }
+  - { name: damage_rate_max, value: 0.001 }
+  - { name: continuous_run_hours, value: 8 }

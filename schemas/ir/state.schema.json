@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roboverify.dev/schemas/ir/state.schema.json",
+  "title": "State IR",
+  "description": "The set of states the robot must KNOW to accomplish the task, each with required quality (accuracy/rate/latency/confidence/coverage). This is what observability analysis compares against provided sensors.",
+  "type": "object",
+  "required": ["schemaVersion", "taskId", "states"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "taskId": { "type": "string" },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "examples": ["object_pose", "robot_pose", "end_effector_pose", "contact_force", "grasp_state", "obstacle_geometry", "object_velocity"] },
+          "description": { "type": "string" },
+          "requiredBy": { "type": "array", "items": { "type": "string" }, "description": "capability ids that consume this state" },
+          "accuracy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "position_mm": { "type": "number" },
+              "orientation_deg": { "type": "number" }
+            }
+          },
+          "update_rate_hz_min": { "type": "number", "exclusiveMinimum": 0 },
+          "latency_ms_max": { "type": "number", "exclusiveMinimum": 0 },
+          "confidence_min": { "type": "number", "minimum": 0, "maximum": 1 },
+          "coverage_min": { "type": "number", "minimum": 0, "maximum": 1, "description": "fraction of task space where this state must be observable" }
+        }
+      }
+    }
+  }
+}

@@ -1,18 +1,79 @@
-# RoboVerify development infrastructure (M0 baseline).
-# Starts PostgreSQL + MinIO only. Backend / runtime / frontend services land in M0.
+# RoboVerify 全栈部署（Docker 容器化，不在开发机本地跑进程）。
+# PostgreSQL：M0 起必需；backend/runtime/frontend：应用全栈；Seafile：对象存储（ADR-0005，M2 首次实际使用，可不启动）。
 #
 # Usage:
-#   cd deploy && docker compose up -d
-#   PostgreSQL  -> localhost:15432  (roboverify / roboverify, db: roboverify)
-#   MinIO API   -> localhost:19000
-#   MinIO console -> http://localhost:19001 (roboverify / roboverify)
+#   docker compose up -d postgres                            # 仅数据库（本地调代码用）
+#   docker compose up -d postgres backend runtime frontend   # 应用全栈（正式形态）
+#   docker compose up -d                                     # 全量（再加 Seafile 栈）
 #
-# Non-default host ports avoid clashing with locally installed PG/MinIO.
-# Override via .env (see .env.example).
+#   Frontend  -> http://localhost:18000
+#   Backend   -> http://localhost:18090/actuator/health
+#   Runtime   -> http://localhost:18081/health
+#   PostgreSQL-> localhost:15432  (roboverify / roboverify, db: roboverify)
+#   Seafile Web-> http://localhost:18080 (admin@roboverify.local / roboverify123)
+#
+# 非默认宿主端口，避免与本机已有服务冲突；可用 .env 覆盖（见 .env.example）。
 
 name: roboverify
 
 services:
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: roboverify-backend
+    environment:
+      ROBOVERIFY_DB_URL: jdbc:postgresql://postgres:5432/roboverify
+      ROBOVERIFY_DB_USER: roboverify
+      ROBOVERIFY_DB_PASSWORD: roboverify
+      ROBOVERIFY_RUNTIME_URL: http://runtime:8081
+      ROBOVERIFY_STORAGE_TYPE: local
+    ports:
+      - "${BACKEND_PORT:-18090}:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # temurin JRE 镜像无 wget/curl 且 dash 不支持 /dev/tcp，显式用 bash 探活
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8090 && printf 'GET /actuator/health/liveness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+    restart: unless-stopped
+
+  runtime:
+    build:
+      context: ..
+      dockerfile: runtime/Dockerfile
+    container_name: roboverify-runtime
+    environment:
+      ROBOVERIFY_DATABASE_URL: postgresql://roboverify:roboverify@postgres:5432/roboverify
+    ports:
+      - "${RUNTIME_PORT:-18081}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8081/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    container_name: roboverify-frontend
+    ports:
+      - "${FRONTEND_PORT:-18000}:80"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
   postgres:
     image: postgres:17-alpine
     container_name: roboverify-postgres
@@ -31,21 +92,52 @@ services:
       retries: 12
     restart: unless-stopped
 
-  minio:
-    image: minio/minio:latest # TODO(M0): pin an explicit release tag
-    container_name: roboverify-minio
-    command: server /data --console-address ":9001"
+  # ---- Seafile 对象存储栈（ADR-0005；镜像 tag 首次 up 时验证，如有更新按官方文档调整） ----
+  seafile-db:
+    image: mariadb:11
+    container_name: roboverify-seafile-db
     environment:
-      MINIO_ROOT_USER: roboverify
-      MINIO_ROOT_PASSWORD: roboverify
-    ports:
-      - "${MINIO_API_PORT:-19000}:9000"
-      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+      MARIADB_ROOT_PASSWORD: roboverify_seafile
+      MARIADB_AUTO_UPGRADE: "1"
     volumes:
-      - ./data/minio:/data
+      - ./data/seafile-db:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD-SHELL", "mariadb-admin ping -uroot -proboverify_seafile --silent"]
+      interval: 10s
+      timeout: 5s
       retries: 12
+    restart: unless-stopped
+
+  seafile-memcached:
+    image: memcached:1.6-alpine
+    container_name: roboverify-seafile-memcached
+    command: memcached -m 128
+    restart: unless-stopped
+
+  seafile:
+    image: seafileltd/seafile-mc:11.0-latest
+    container_name: roboverify-seafile
+    environment:
+      - SEAFILE_SERVER_HOSTNAME=localhost
+      - SEAFILE_SERVER_PROTOCOL=http
+      - SEAFILE_ADMIN_EMAIL=admin@roboverify.local
+      - SEAFILE_ADMIN_PASSWORD=roboverify123
+      - DB_HOST=seafile-db
+      - DB_ROOT_PASSWD=roboverify_seafile
+      - SEAFILE_MYSQL_DB_HOSTNAME=seafile-db
+      - SEAFILE_MYSQL_DB_ROOT_PASSWD=roboverify_seafile
+      - SEAFILE_MYSQL_DB_USER=seafile
+      - SEAFILE_MYSQL_DB_PASSWORD=roboverify_seafile@2026
+      - MEMCACHED_HOST=seafile-memcached
+    ports:
+      - "${SEAFILE_WEB_PORT:-18080}:80"
+      # SeafDAV(WebDAV) 端口：容器内 8080，需在 seafdav.conf 中启用后放开
+      # - "${SEAFILE_DAV_PORT:-18082}:8080"
+    volumes:
+      - ./data/seafile:/seafile
+    depends_on:
+      seafile-db:
+        condition: service_healthy
+      seafile-memcached:
+        condition: service_started
     restart: unless-stopped

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roboverify.dev/schemas/ir/system.schema.json",
+  "title": "System IR",
+  "description": "A concrete system configuration under verification: which assets, mounted where, with which calibrations.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "components"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "projectId": { "type": ["string", "null"] },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "assetId"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "description": "Instance id within this system, e.g. cam-overhead-1" },
+          "type": {
+            "enum": ["robot", "camera", "depth_camera", "force_sensor", "gripper", "controller", "compute", "network", "software"]
+          },
+          "assetId": { "type": "string", "description": "Reference into the Asset Registry" },
+          "mountPose": {
+            "type": "object",
+            "required": ["x", "y", "z"],
+            "additionalProperties": false,
+            "properties": {
+              "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" },
+              "roll": { "type": "number", "description": "deg" },
+              "pitch": { "type": "number", "description": "deg" },
+              "yaw": { "type": "number", "description": "deg" },
+              "frame": { "type": "string", "default": "world" }
+            }
+          },
+          "params": { "type": "object", "description": "Instance-level parameter overrides (exposure, speed limits, ...)" }
+        }
+      }
+    },
+    "calibrations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "enum": ["hand_eye", "camera_intrinsics", "tool", "fixture"] },
+          "method": { "type": "string" },
+          "residual": { "type": "object", "description": "e.g. {reprojection_px: 0.4, translation_mm: 0.8}" },
+          "calibratedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "topology": { "type": "string" },
+        "latency_ms": { "type": "number" },
+        "jitter_ms": { "type": "number" }
+      }
+    }
+  }
+}

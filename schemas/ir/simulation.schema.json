@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roboverify.dev/schemas/ir/simulation.schema.json",
+  "title": "Simulation IR",
+  "description": "Simulator-agnostic simulation description. Upper layers never touch gz/Isaac APIs directly (ADR-0003).",
+  "type": "object",
+  "required": ["schemaVersion", "id", "scene", "robot"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string" },
+    "scene": { "enum": ["bin_picking"] },
+    "robot": {
+      "type": "object",
+      "required": ["assetId"],
+      "additionalProperties": false,
+      "properties": {
+        "assetId": { "type": "string" },
+        "urdf_key": { "type": "string", "description": "object-store key of the URDF; falls back to built-in model by assetId" },
+        "home_joints": { "type": "array", "items": { "type": "number" } }
+      }
+    },
+    "sensors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["componentId", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "componentId": { "type": "string", "description": "System IR component instance id" },
+          "type": { "enum": ["rgb", "depth", "rgbd"] },
+          "pose": {
+            "type": "object",
+            "required": ["x", "y", "z"],
+            "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" }, "roll": { "type": "number" }, "pitch": { "type": "number" }, "yaw": { "type": "number" } }
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "resolution": { "type": "string", "examples": ["1280x720"] },
+              "fps": { "type": "number" },
+              "fov_deg": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environment_ref": { "type": "string", "description": "Environment IR id" },
+        "seed": { "type": "integer" },
+        "overrides": { "type": "object", "description": "per-run experiment parameter values, e.g. {illumination_lux: 3400}" }
+      }
+    },
+    "script": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["scripted_pick"], "default": "scripted_pick" },
+        "params": { "type": "object" }
+      }
+    },
+    "metrics_to_collect": {
+      "type": "array",
+      "items": { "type": "string" },
+      "examples": [["pick_success", "cycle_time_s", "collision_count", "position_error_mm"]]
+    },
+    "timeout_s": { "type": "number", "exclusiveMinimum": 0, "default": 120 }
+  }
+}
