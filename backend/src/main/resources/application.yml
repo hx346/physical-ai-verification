@@ -36,7 +36,10 @@ roboverify:
   # Python 工程运行时地址（ADR-0001 契约）
   runtime:
     base-url: ${ROBOVERIFY_RUNTIME_URL:http://localhost:8081}
-  # 对象存储：M0 仅本地实现占位；Seafile/WebDAV 适配器 M2 落地（ADR-0005）
+  # 对象存储：local=本地文件系统；seafile-webdav=Seafile SeafDAV（ADR-0005，适配器已实现）
+  # 切换示例：ROBOVERIFY_STORAGE_TYPE=seafile-webdav ROBOVERIFY_SEAFILE_URL=http://seafile:8080/seafdav
+  #          ROBOVERIFY_SEAFILE_USER=admin@roboverify.local ROBOVERIFY_SEAFILE_PASSWORD=***
+  # 注意：SeafDAV 需在 Seafile 容器 /seafile/conf/seafdav.conf 中 enabled=true 后重启生效
   storage:
     type: ${ROBOVERIFY_STORAGE_TYPE:local}
     local:

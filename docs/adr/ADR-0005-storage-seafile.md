@@ -22,8 +22,10 @@
 - 引入 **ObjectStore SPI**（`backend/.../storage/ObjectStore.java`）：`put/get/exists/delete`，
   key 规范 `/{bucket}/{domain}/{id}/{filename}`（如 `/sim-logs/run-xxx/run.log`）。
 - M0 只实现 `LocalFsObjectStore`（开发/测试，零外部依赖）。
-- M2 实现 `SeafileWebDavObjectStore`（启用 SeafDAV，库：`roboverify`；目录按 bucket 分层），
-  随仿真日志/证据文件一起落地并验证。
+- `SeafileWebDavObjectStore` **已于 2026-09-14 提前实现**（原计划 M2）：JDK HttpClient 实现
+  MKCOL(递归建父目录)/PUT/HEAD(405 时回退 PROPFIND)/GET/DELETE(幂等)，Basic 认证，
+  key 含 `..` 段拒绝（与 LocalFs 同等防护）。单测 7/7 通过（fake WebDAV，不依赖容器）。
+  切换方式：`ROBOVERIFY_STORAGE_TYPE=seafile-webdav` + `ROBOVERIFY_SEAFILE_URL` 等（见 application.yml 注释）。
 - `deploy/docker-compose.yml` 提供 Seafile 栈（mariadb + memcached + seafile），M0 不依赖其运行。
 
 ## 后果
@@ -31,4 +33,7 @@
 - 正面：复用既有文件设施；SPI 使后续更换/增加存储（含回到 S3 系）只动适配器。
 - 负面：WebDAV 无 S3 语义（无批量 API/预签名 URL），上传性能与生态弱于 S3；
   Evidence IR 的 `artifacts[].store` 枚举已用 `seafile` 值，迁移成本可控。
-- 待验证：`seafileltd/seafile-mc:11.0-latest` 镜像与 SeafDAV 启用方式，首次 `docker compose up -d seafile` 时确认。
+- 待验证：`seafileltd/seafile-mc:11.0-latest` 镜像拉取中（本机 Docker Hub 直连超时，走镜像加速）；
+  SeafDAV 启用方式：容器内 `/seafile/conf/seafdav.conf` 置 `enabled = true` 后重启，
+  首次 `docker compose up -d seafile` 后做 put/get/exists/delete 容器级 E2E。
+  另注：`docker manifest inspect` 走直连，在本机网络下失败不代表镜像不存在，以 `docker pull` 为准。

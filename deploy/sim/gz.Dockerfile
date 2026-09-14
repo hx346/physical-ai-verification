@@ -1,7 +1,9 @@
 # gz-sim 仿真 worker（compose profile=sim；ADR-0003）
-# ⚠ 假设待验证：基础镜像 tag 与无头渲染（EGL）在 M2 集成窗口确认；
-#   不通过则按 gz 官方镜像调整 tag，上层代码不变。
-FROM ghcr.io/gazebosim/gz-sim:harmonic
+# 基础镜像已验证（2026-09-14）：Gazebo 官方 OCI 镜像发布在 ghcr.io/j-rivero/gazebo（OSRA 官方支持，
+# 覆盖 jetty/ionic/harmonic/fortress × core/full，每周重建；ghcr.io/gazebosim/gz-sim 不存在）。
+# full = 完整 gz 套件（含 gz sim 可执行文件）；core 仅到 sdformat，不含 gz sim。
+# ⚠ 待验证：无头渲染（EGL/ogre2 headless）在 M2 集成窗口确认，不通过则按官方 TROUBLESHOOTING 调整。
+FROM ghcr.io/j-rivero/gazebo:harmonic-full
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip \
