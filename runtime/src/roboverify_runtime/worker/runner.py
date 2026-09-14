@@ -19,7 +19,9 @@ RECOVER_INTERVAL_S = 60.0
 
 def run_forever(worker_id: str = "worker-1") -> None:
     setup_logging(settings.log_level)
-    log.info("worker starting", worker_id=worker_id, handlers=registered_types() or ["<none>"])
+    capabilities = [c.strip() for c in settings.worker_capabilities.split(",") if c.strip()]
+    log.info("worker starting", worker_id=worker_id, handlers=registered_types() or ["<none>"],
+             capabilities=capabilities or ["<any>"])
     last_recover = time.monotonic()
     with psycopg.connect(settings.database_url) as conn:
         while True:
@@ -29,7 +31,7 @@ def run_forever(worker_id: str = "worker-1") -> None:
                 last_recover = time.monotonic()
 
             with conn.transaction():
-                job = claim_next_job(conn, worker_id)
+                job = claim_next_job(conn, worker_id, capabilities)
             if job is None:
                 time.sleep(settings.worker_poll_interval_s)
                 continue

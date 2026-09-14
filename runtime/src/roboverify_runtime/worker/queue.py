@@ -27,8 +27,13 @@ class ClaimedJob:
     max_attempts: int
 
 
-def claim_next_job(conn: psycopg.Connection, worker_id: str) -> ClaimedJob | None:
-    """在调用方事务内认领一个任务并置 RUNNING；无任务返回 None。"""
+def claim_next_job(conn: psycopg.Connection, worker_id: str,
+                   capabilities: list[str] | None = None) -> ClaimedJob | None:
+    """在调用方事务内认领一个任务并置 RUNNING；无任务返回 None。
+    能力路由：requires 非空的任务只被具备该能力的 worker 认领。"""
+    if capabilities is None:
+        capabilities = [c.strip() for c in settings.worker_capabilities.split(",") if c.strip()]
+    caps = capabilities
     with conn.cursor() as cur:
         cur.execute("SET LOCAL lock_timeout = '3s'")
         cur.execute(
@@ -36,6 +41,7 @@ def claim_next_job(conn: psycopg.Connection, worker_id: str) -> ClaimedJob | Non
             WITH next_job AS (
                 SELECT id FROM job_queue
                 WHERE status = 'QUEUED'
+                  AND (requires IS NULL OR requires = ANY(%s))
                 ORDER BY priority, id
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
@@ -47,7 +53,7 @@ def claim_next_job(conn: psycopg.Connection, worker_id: str) -> ClaimedJob | Non
             WHERE j.id = next_job.id
             RETURNING j.id, j.job_key, j.type, j.payload, j.attempts, j.max_attempts
             """,
-            (worker_id, settings.worker_lock_ttl_s),
+            (caps, worker_id, settings.worker_lock_ttl_s),
         )
         row = cur.fetchone()
         if row is None:

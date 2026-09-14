@@ -50,6 +50,22 @@
             </li>
           </ul>
         </template>
+        <template v-if="simEvidences.length">
+          <p style="margin-top: 12px"><b>关联仿真证据（gz-sim）：</b></p>
+          <div v-for="ev in simEvidences" :key="ev.evidenceId"
+               style="border: 1px solid #f0f0f0; border-radius: 6px; padding: 8px; margin-bottom: 8px">
+            <p style="margin: 0 0 4px">
+              <a-tag color="purple">{{ ev.evidenceId }}</a-tag>
+              <span style="color: #888; font-size: 12px">{{ ev.ir?.adapter }} · {{ ev.createdAt }}</span>
+            </p>
+            <div v-for="(v, k) in ev.ir?.metrics ?? {}" :key="k" style="font-size: 12px">
+              {{ k }}: {{ typeof v === 'number' ? v.toFixed(3) : v }}
+            </div>
+            <div v-for="art in ev.ir?.artifacts ?? []" :key="art.key" style="font-size: 12px; color: #888; margin-top: 4px">
+              artifact: {{ art.name }} [{{ art.store }}] {{ art.key }}
+            </div>
+          </div>
+        </template>
       </template>
     </a-drawer>
   </div>
@@ -94,6 +110,16 @@ const lastRunId = ref('')
 const runMeta = ref<{ runId: string; kernelVersion: string; traceId: string } | null>(null)
 const drawerOpen = ref(false)
 const detail = ref<Item | null>(null)
+interface SimEvidence {
+  evidenceId: string
+  createdAt?: string
+  ir?: {
+    adapter?: string
+    metrics?: Record<string, number>
+    artifacts?: { name: string; store: string; key: string }[]
+  }
+}
+const simEvidences = ref<SimEvidence[]>([])
 
 const projectOptions = computed(() => projects.value.map((p) => ({ value: p.id, label: p.name })))
 const systemOptions = computed(() =>
@@ -146,6 +172,12 @@ async function showDetail(item: Item) {
     detail.value = item
   }
   drawerOpen.value = true
+  // 关联仿真证据（该需求无仿真证据时静默不显示）
+  try {
+    simEvidences.value = await http.get<SimEvidence[]>(`/api/simulations/requirements/${item.requirementId}`)
+  } catch {
+    simEvidences.value = []
+  }
 }
 
 async function downloadReport() {

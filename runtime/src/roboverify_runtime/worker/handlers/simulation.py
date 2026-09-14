@@ -20,10 +20,15 @@ def run(job) -> dict:
     adapter = get_adapter("gz")
     scene = adapter.build_scene(sim_ir)
     result = adapter.run(sim_ir, scene, float(sim_ir.get("timeout_s", DEFAULT_TIMEOUT_S)))
+    # 诚实标注：IR 请求的指标中哪些真正测到、哪些当前不可得（脚本化抓取序列 M2 后续实现，不编造）
+    requested = sim_ir.get("metrics_to_collect") or []
+    available = {m: ("measured" if m in result.metrics else "unavailable") for m in requested}
     log.info("simulation done", job_key=job.job_key, metrics=result.metrics)
     return {
         "metrics": result.metrics,
         "notes": result.notes,
         "logExcerpt": result.log_excerpt[-2000:],
+        "sceneSdf": scene,
         "sceneSdfBytes": len(scene),
+        "requestedMetrics": available,
     }

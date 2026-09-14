@@ -7,6 +7,14 @@
 
 ### Added
 
+- **仿真证据落库 + 矩阵下钻（M2 DoD 完结）**：`SimulationController`（POST /api/simulations 派发、
+  GET 轮询摄取幂等、按项目/需求查询）；摄取时 scene.sdf/run.log 归档对象存储
+  （/sim-logs/{jobKey}/…，evidence.artifacts 引用）；前端矩阵 Drawer 关联仿真证据区块（metrics+artifacts）；
+  demo 第八幕（SIM=1 可选）
+- **job 队列能力路由**：job_queue.requires 列（Flyway V6）+ worker ROBOVERIFY_WORKER_CAPABILITIES
+  （sim-worker=gz），requires 非空的任务只被具备能力的 worker 认领（修复普通 worker 误领仿真任务失败）
+- simulation handler 带回 SDF 全文 + requestedMetrics 可得性诚实标注（unavailable 不编造）
+
 - **gz-sim 集成实测打通（M2 核心验证）**：官方 OCI 镜像 `ghcr.io/j-rivero/gazebo:harmonic-full`
   （gz 8.10.0，2.74GB）无 GPU 无头渲染（ogre2/EGL）通过——rgbd 相机产出 image/depth_image/points
   话题且有数据帧；sim-worker 容器（profile=sim）消费 simulation job SUCCEEDED，指标全真实且自洽

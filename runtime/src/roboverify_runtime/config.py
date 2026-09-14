@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     monte_carlo_n_default: int = 10_000
     worker_poll_interval_s: float = 2.0
     worker_lock_ttl_s: int = 300
+    # 能力标签（逗号分隔）：sim-worker 设 "gz"，只认领 requires 匹配的任务
+    worker_capabilities: str = ""
     job_max_attempts: int = 3
 
 

@@ -81,7 +81,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # 仿真 worker（M2 集成待验证）：docker compose --profile sim up -d sim-worker
+  # 仿真 worker（gz 集成已验证 2026-09-15）：docker compose --profile sim up -d sim-worker
+  # 能力路由：requires='gz' 的任务只被本 worker 认领（普通 worker 无 gz 会显式失败）
   sim-worker:
     build:
       context: ..
@@ -90,6 +91,7 @@ services:
     profiles: ["sim"]
     environment:
       ROBOVERIFY_DATABASE_URL: postgresql://roboverify:roboverify@postgres:5432/roboverify
+      ROBOVERIFY_WORKER_CAPABILITIES: gz
     depends_on:
       postgres:
         condition: service_healthy

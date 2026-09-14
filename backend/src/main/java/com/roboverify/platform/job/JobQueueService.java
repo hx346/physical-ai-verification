@@ -19,8 +19,8 @@ public class JobQueueService {
     private static final Logger log = LoggerFactory.getLogger(JobQueueService.class);
 
     private static final String ENQUEUE_SQL = """
-            INSERT INTO job_queue (job_key, type, payload, priority, trace_id)
-            VALUES (?, ?, ?::jsonb, ?, ?)
+            INSERT INTO job_queue (job_key, type, payload, priority, trace_id, requires)
+            VALUES (?, ?, ?::jsonb, ?, ?, ?)
             ON CONFLICT (job_key) DO NOTHING
             """;
 
@@ -40,11 +40,17 @@ public class JobQueueService {
 
     /** @return true=新任务已入队；false=job_key 已存在（幂等复用） */
     public boolean enqueue(String jobKey, String type, String payloadJson, String traceId) {
-        int inserted = jdbcTemplate.update(ENQUEUE_SQL, jobKey, type, payloadJson, DEFAULT_PRIORITY, traceId);
+        return enqueue(jobKey, type, payloadJson, traceId, null, DEFAULT_PRIORITY);
+    }
+
+    /** requires 非空时任务只被具备该能力的 worker 认领（如 simulation → gz）。 */
+    public boolean enqueue(String jobKey, String type, String payloadJson, String traceId,
+                           String requires, short priority) {
+        int inserted = jdbcTemplate.update(ENQUEUE_SQL, jobKey, type, payloadJson, priority, traceId, requires);
         if (inserted == 0) {
             log.info("job already exists, jobKey={}", jobKey);
         } else {
-            log.info("job enqueued, jobKey={}, type={}", jobKey, type);
+            log.info("job enqueued, jobKey={}, type={}, requires={}", jobKey, type, requires);
         }
         return inserted > 0;
     }

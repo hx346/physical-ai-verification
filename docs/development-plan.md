@@ -116,7 +116,7 @@
 - [x] 队列消费/状态查询/幂等（job_key 唯一；experiment 类型已验证全链路）
 - [x] Worker 崩溃重启后 RUNNING 任务可恢复（心跳超时回收，代码实现+单测覆盖 claim 路径）
 - [x] gz 仿真任务实际执行（**2026-09-15 容器实测**：官方 OCI 镜像 `ghcr.io/j-rivero/gazebo:harmonic-full`（gz 8.10.0）+ 无 GPU 无头渲染 ogre2/EGL 通过——rgbd 相机产出 image/depth_image/points 话题且有数据帧；sim-worker 容器（profile=sim）消费 simulation job #8 SUCCEEDED，真实指标 sim_time_s=113 / RTF=0.998 / physics_iterations=113933 / depth_camera_active=1。实测抓出并修复：scene_builder 缺 gz systems 插件（Physics/Sensors）→ 传感器不实例化）
-- [ ] 仿真证据进 Verification Matrix：simulation job 结果目前存 job payload，尚缺 evidence 落库 + 矩阵下钻至 SeaweedFS 对象（存储链路已全通：SeaweedS3ObjectStore 四层验证 + 报告归档数据面 E2E）
+- [x] 仿真证据进 Verification Matrix（**2026-09-15 容器实测**：POST /api/simulations → sim-worker（能力路由 requires=gz）→ evidence 落库 E00162 → scene.sdf 归档 SeaweedFS /sim-logs/{jobKey}/ → 矩阵下钻 API + 前端 Drawer 关联仿真证据区块；IR 请求指标不可得处诚实标注 unavailable 不编造；demo 第八幕 SIM=1 可选）
 
 ---
 

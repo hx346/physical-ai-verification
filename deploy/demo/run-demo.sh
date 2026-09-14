@@ -135,5 +135,45 @@ MODEL_ID=$(echo "$CAL" | jq_get "d['data']['modelVersionId']")
 post "/api/realtest/models/$MODEL_ID/activate" '{}' | jq_get "d['code']"
 echo "  校准版本已激活（DRAFT→ACTIVE；回滚=再激活旧版本）"
 
-log "Demo 全部完成 ✓（三幕 + 位姿对照 + Real2Sim 闭环）"
+# 第八幕（可选，需 sim-worker）：gz-sim 无头仿真 → 证据归档对象存储 → 矩阵下钻。
+# 前置：docker compose -f deploy/docker-compose.yml --profile sim up -d sim-worker
+log "8. gz-sim 仿真（可选：SIM=1 且 sim-worker 运行时执行，约 60s）"
+if [ "${SIM:-0}" = "1" ]; then
+  SIM_JSON="$(mktemp -d)/sim.json"
+  "$PY" -c "
+import json, yaml, pathlib
+ir = yaml.safe_load(pathlib.Path('schemas/examples/simulation/bin-picking.yaml').read_text(encoding='utf-8'))
+ir['timeout_s'] = 45
+json.dump({'projectId': '$PROJECT', 'simulation': ir, 'requirementKey': 'R003'}, open('$SIM_JSON', 'w', encoding='utf-8'))"
+  SIM_JOB=$(curl -s -X POST "$BASE/api/simulations" -H "$AUTH" -H 'Content-Type: application/json' \
+    --data-binary "@$SIM_JSON" | jq_get "d['data']['jobKey']")
+  echo "  jobKey=$SIM_JOB 轮询中…"
+  for i in $(seq 1 30); do
+    SIM_OUT=$(curl -s "$BASE/api/simulations/$SIM_JOB" -H "$AUTH")
+    SIM_STATUS=$(echo "$SIM_OUT" | jq_get "d['data']['status']")
+    [ "$SIM_STATUS" = "SUCCEEDED" ] && break
+    [ "$SIM_STATUS" = "FAILED" ] && { echo "  仿真任务失败"; break; }
+    sleep 5
+  done
+  echo "$SIM_OUT" | "$PY" -c "
+import sys, json
+d = json.load(sys.stdin)['data']
+print('  状态:', d['status'], ' evidenceId:', d.get('evidenceId'))
+m = (d.get('result') or {}).get('metrics') or {}
+print('  gz 实测指标:', json.dumps(m, ensure_ascii=False))
+rm = (d.get('result') or {}).get('requestedMetrics') or {}
+print('  IR 请求指标可得性（不可得不编造）:', json.dumps(rm, ensure_ascii=False))
+"
+  curl -s "$BASE/api/simulations/requirements/R003" -H "$AUTH" | "$PY" -c "
+import sys, json
+evs = json.load(sys.stdin)['data']
+print(f'  矩阵下钻 R003 仿真证据 {len(evs)} 条；artifacts 归档于',
+      [a['key'] for e in evs for a in e['ir'].get('artifacts', [])] or '(无)')
+"
+  rm -f "$SIM_JSON"
+else
+  echo "  跳过（SIM=1 且启动 sim-worker 后执行：docker compose --profile sim up -d sim-worker）"
+fi
+
+log "Demo 全部完成 ✓（三幕 + 位姿对照 + Real2Sim 闭环 + 可选仿真幕）"
 rm -f "$TMPJSON"
