@@ -27,7 +27,11 @@ services:
       ROBOVERIFY_DB_USER: roboverify
       ROBOVERIFY_DB_PASSWORD: roboverify
       ROBOVERIFY_RUNTIME_URL: http://runtime:8081
-      ROBOVERIFY_STORAGE_TYPE: local
+      # 存储切换（默认 local 不变；启用 Seafile 见 deploy/demo/verify-seafile.sh 第 5 步）
+      ROBOVERIFY_STORAGE_TYPE: ${ROBOVERIFY_STORAGE_TYPE:-local}
+      ROBOVERIFY_SEAFILE_URL: ${ROBOVERIFY_SEAFILE_URL:-}
+      ROBOVERIFY_SEAFILE_USER: ${ROBOVERIFY_SEAFILE_USER:-}
+      ROBOVERIFY_SEAFILE_PASSWORD: ${ROBOVERIFY_SEAFILE_PASSWORD:-}
     ports:
       - "${BACKEND_PORT:-18090}:8090"
     depends_on:
@@ -159,8 +163,8 @@ services:
       - MEMCACHED_HOST=seafile-memcached
     ports:
       - "${SEAFILE_WEB_PORT:-18080}:80"
-      # SeafDAV(WebDAV) 端口：容器内 8080，需在 seafdav.conf 中启用后放开
-      # - "${SEAFILE_DAV_PORT:-18082}:8080"
+      # SeafDAV(WebDAV) 端口：容器内 8080；启用方式见 application.yml 注释（seafdav.conf enabled=true）
+      - "${SEAFILE_DAV_PORT:-18082}:8080"
     volumes:
       - ./data/seafile:/seafile
     depends_on:
