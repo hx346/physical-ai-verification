@@ -8,26 +8,18 @@ import psycopg
 
 from ..config import settings
 from ..logging_setup import get_logger, setup_logging
+from . import handlers  # noqa: F401  导入即注册处理器（在 registry 中登记）
 from .queue import claim_next_job, complete_job, fail_job, recover_timed_out
+from .registry import get_handler, registered_types
 
 log = get_logger("worker.runner")
-
-_HANDLERS: dict[str, object] = {}  # M2 注册 "simulation"，M3 "experiment"，M4 "calibration"
 
 RECOVER_INTERVAL_S = 60.0
 
 
-def handle(job_type: str):
-    """处理器注册装饰器（M2+ 使用）。"""
-    def register(fn):
-        _HANDLERS[job_type] = fn
-        return fn
-    return register
-
-
 def run_forever(worker_id: str = "worker-1") -> None:
     setup_logging(settings.log_level)
-    log.info("worker starting", worker_id=worker_id, handlers=sorted(_HANDLERS) or ["<none>"])
+    log.info("worker starting", worker_id=worker_id, handlers=registered_types() or ["<none>"])
     last_recover = time.monotonic()
     with psycopg.connect(settings.database_url) as conn:
         while True:
@@ -43,11 +35,11 @@ def run_forever(worker_id: str = "worker-1") -> None:
                 continue
 
             log.info("job claimed", job_id=job.id, job_key=job.job_key, type=job.type)
-            handler = _HANDLERS.get(job.type)
+            handler = get_handler(job.type)
             try:
                 # 处理器在事务外运行（长任务禁止持 DB 事务）；完成/失败用短事务回写
                 if handler is None:
-                    result = {"note": f"no handler for type={job.type} in M0"}
+                    result = {"note": f"no handler for type={job.type}"}
                     log.warning("no handler, job marked done", job_key=job.job_key, type=job.type)
                 else:
                     result = handler(job)
@@ -58,3 +50,7 @@ def run_forever(worker_id: str = "worker-1") -> None:
                 log.error("job failed", job_key=job.job_key, error=str(e), exc_info=True)
                 with conn.transaction():
                     fail_job(conn, job.id, str(e))
+
+
+if __name__ == "__main__":
+    run_forever()

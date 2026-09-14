@@ -1,7 +1,7 @@
 # Demo 替换配置：换 RGB-D 相机 C —— 预期定位精度 PASS（P95 ≈ 2.4mm）
 schemaVersion: "0.1.0"
 id: sys-rgbd-binpicking
-name: "Bin Picking — RGB-D 配置（预期 PASS）"
+name: "Bin Picking — RGB-D 配置（预期 PASS：相机 0.65m 近距，深度 σ 外推后 P95≈2.85mm）"
 projectId: proj-bin-picking-demo
 components:
   - id: robot-1
@@ -13,7 +13,7 @@ components:
     mountPose:
       x: 0.0
       y: 0.0
-      z: 1.2
+      z: 0.65
       roll: 0
       pitch: 90
       yaw: 0

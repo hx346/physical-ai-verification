@@ -13,7 +13,7 @@ components:
     mountPose:
       x: 0.0
       y: 0.0
-      z: 1.2
+      z: 0.85
       roll: 0
       pitch: 90   # 朝下
       yaw: 0

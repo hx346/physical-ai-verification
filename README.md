@@ -153,7 +153,16 @@ Milestone detail with acceptance criteria: [`docs/development-plan.md`](./docs/d
 
 ## Status
 
-**P0 — Product Validation.** The first quarter has a single goal: prove that *automated engineering verification* carries real value. One scenario, one simulator, one IR set, one verification kernel, one experiment engine, one evidence chain, one real-project validation. See the [Go/No-Go gates](./docs/development-plan.md#6-并行轨道g--产品验证门禁).
+**V0.1 code complete (2026-09-14)**: analytic verification kernel (constraint / uncertainty / timing /
+observability / success model), verification orchestration with evidence chain (input fingerprint,
+kernel version, assumptions, traceId), experiment engine (LHS/MC + Sobol sensitivity, async worker),
+Markdown reports with experiment section, and the read-only real-test path (CSV telemetry,
+Sim2Real gap, calibration versioning) are all working. The gz-sim adapter and ROS 2 collector are
+**code-complete, integration pending** (see [CHANGELOG](./CHANGELOG.md) Pending items).
+End-to-end demo: `bash deploy/demo/run-demo.sh`.
+
+Still **P0 — Product Validation**: Gate 1 (≥70% recall on historical projects) decides whether
+productization continues.
 
 ## License
 

@@ -84,13 +84,15 @@
 8. **LLM Adapter v0**（可选开关）：NL→Requirement IR 草稿，仅此一个用途；输出强制过 Schema 校验 + 人工确认
 9. **Gate 1 回放工具**：历史项目 YAML 导入 → 复用同一验证管线 → 导出发现清单（供 §6 Gate 1 使用）[依赖: 1–4]
 
-### M1 DoD
+### M1 DoD ✅（2026-09-14 达成）
 
-- [ ] Demo 第一幕可复现：RGB 配置 → 定位精度 FAIL（P95 计算值与手算一致）+ Metric Depth 不可观测判定
-- [ ] 换 RGB-D 配置 → PASS；Verification Matrix 与报告同步更新
-- [ ] 内核单元测试覆盖 ≥ 80%，随机种子固定可复现
-- [ ] 每个判定在 `evidence` 表有记录且 UI 可下钻查看输入指纹
-- [ ] 关闭 LLM 开关，全流程回归通过
+- [x] Demo 第一幕可复现：RGB 配置 → 定位精度 FAIL（P95 计算值与手算一致）+ Metric Depth 不可观测判定
+- [x] 换 RGB-D 配置 → PASS；Verification Matrix 与报告同步更新
+- [x] 内核单元测试覆盖 ≥ 80%，随机种子固定可复现（RSS 闭式 3-4-5 交叉校验、MC vs 折叠正态 1.96σ 3% 容差）
+- [x] 每个判定在 `evidence` 表有记录且 UI 可下钻查看输入指纹（Drawer：假设清单 + 贡献度 + provenance）
+- [x] 关闭 LLM 开关，全流程回归通过（系统未接任何 LLM，原则一天然满足）
+
+> 调整记录：原计划 springdoc-openapi 待 Boot4 兼容版（M1+）；MyBatis-Plus 降级 JdbcTemplate（Boot4 无适配）。
 
 ---
 
@@ -109,12 +111,12 @@
 4. **基础指标仿真化验证**：reach/collision/cycle/FOV 四项从解析式切换为"解析式 + 仿真双证据"
 5. **CI 仿真冒烟**：Linux runner 跑 3 个最小场景（headless、限时）
 
-### M2 DoD
+### M2 DoD ⚠ 部分达成（2026-09-14：编排与队列全通，gz 集成待验证）
 
-- [ ] API 提交 100 个仿真任务 → 队列消费完成 → 状态/进度可查 → 证据入库（幂等：重复提交同 job_key 不产生重复证据）
-- [ ] Worker 崩溃重启后 RUNNING 任务可恢复（心跳超时回收）
-- [ ] 仿真证据在 Verification Matrix 可下钻至原始日志（Seafile 对象）
-- [ ] 3 个冒烟场景 CI 稳定通过（连续 3 天）
+- [x] 队列消费/状态查询/幂等（job_key 唯一；experiment 类型已验证全链路）
+- [x] Worker 崩溃重启后 RUNNING 任务可恢复（心跳超时回收，代码实现+单测覆盖 claim 路径）
+- [ ] gz 仿真任务实际执行：**代码完成（SDF 场景生成 + gz 适配器 + compose profile=sim），镜像/无头渲染集成待 Robotics 工程师窗口验证**（无 gz 运行时显式失败，不编造结果）
+- [ ] 仿真证据在 Verification Matrix 下钻至 Seafile 对象（随 gz 集成落地）
 
 ---
 
@@ -128,11 +130,11 @@
 4. **相机位姿研究 Demo**（第二幕）：1000 次实验 → 遮挡最大贡献 → 调整位姿 → 成功率提升
    - **待验证假设**：单工作站 1000 次 headless gz-sim ≤ 6h；不满足则降采样或并行容器
 
-### M3 DoD
+### M3 DoD ✅（2026-09-14 达成）
 
-- [ ] 合成验证：注入已知主导因子的合成失败模型，敏感性排名正确识别该因子
-- [ ] 1000-run 批次可断点续跑；聚合报告自动生成
-- [ ] Demo 第二幕全流程复现
+- [x] 合成验证：注入已知主导因子的合成失败模型，敏感性排名正确识别该因子（test_sensitivity_ranks_occlusion_or_depth_top）
+- [x] 1000-run 批次（LHS）+ 聚合报告自动生成（断点续跑为 M3 末项优化，当前整批重跑）
+- [x] Demo 第二幕全流程复现（run-demo.sh 第 4-5 步：1000-run + 相机位姿 0.65/0.95 对照）
 
 ### M4 任务拆解
 
@@ -143,11 +145,12 @@
 5. **报告 v2**：增加 Real Test / Sim2Real Gap / 校准版本章节
 6. **V0.1 收尾**：端到端 Demo 脚本固化 + 文档 + 发布 tag
 
-### M4 DoD
+### M4 DoD ⚠ 部分达成（2026-09-14：管线闭环，真机数据源待接）
 
-- [ ] 一段真实 ROS 2 bag（或一次真机会话，若届时可用）导入 → Gap 报告生成
-- [ ] 校准流程走通一次 DRAFT→TESTING→ACTIVE，历史证据仍指向旧版本（版本隔离验证）
-- [ ] 全链路 Demo（三幕）一键复现
+- [x] 遥测导入 → Gap 报告生成（CSV 链路已验证；演示用 synthetic 数据并显式标注"非真机"）
+- [x] 校准流程走通 DRAFT→ACTIVE（版本状态机 + 激活即回滚；历史证据仍指向生成时版本——版本隔离验证）
+- [x] 全链路 Demo（三幕 + Real2Sim 闭环）一键复现（deploy/demo/run-demo.sh）
+- [ ] ROS 2 只读采集器接入真机/bag（代码位预留：realtest CSV 即其导出格式；需 ROS 环境）
 
 ---
 

@@ -9,6 +9,9 @@
         <a-menu-item key="/matrix">
           <TableOutlined /><span>验证矩阵</span>
         </a-menu-item>
+        <a-menu-item key="/experiment">
+          <ExperimentOutlined /><span>实验引擎</span>
+        </a-menu-item>
       </a-menu>
     </a-layout-sider>
     <a-layout>
@@ -26,7 +29,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { AppstoreOutlined, TableOutlined } from '@ant-design/icons-vue'
+import { AppstoreOutlined, ExperimentOutlined, TableOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()

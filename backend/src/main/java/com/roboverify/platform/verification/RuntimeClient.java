@@ -50,6 +50,54 @@ public class RuntimeClient {
         }
     }
 
+    /** IR 校验（导入数据必须过 Schema；LLM 草稿同样不可绕过）。 */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> validateIr(String ir, Object instance) {
+        try {
+            return restClient.post()
+                    .uri("/api/v1/validate")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("ir", ir, "instance", instance))
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientException e) {
+            log.error("runtime validate failed, ir={}", ir, e);
+            throw new BizException(ErrorCode.RUNTIME_UNAVAILABLE);
+        }
+    }
+
+    /** 真机遥测聚合 + Sim2Real Gap（M4）。 */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> realtestGap(String sessionId, Map<String, Double> simSummary) {
+        try {
+            return restClient.post()
+                    .uri("/api/v1/realtest/gap")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("sessionId", sessionId, "simSummary", simSummary))
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientException e) {
+            log.error("runtime realtest gap failed, sessionId={}", sessionId, e);
+            throw new BizException(ErrorCode.RUNTIME_UNAVAILABLE);
+        }
+    }
+
+    /** Real2Sim 校准拟合（M4）。 */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> calibrate(Map<String, Object> payload) {
+        try {
+            return restClient.post()
+                    .uri("/api/v1/calibration/run")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientException e) {
+            log.error("runtime calibration failed", e);
+            throw new BizException(ErrorCode.RUNTIME_UNAVAILABLE);
+        }
+    }
+
     private static org.springframework.http.client.ClientHttpRequestFactory clientHttpRequestFactory() {
         var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
         factory.setConnectTimeout((int) CONNECT_TIMEOUT.toMillis());

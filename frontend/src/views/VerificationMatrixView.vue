@@ -1,64 +1,170 @@
 <template>
   <div>
     <a-typography-title :level="4">验证矩阵 Verification Matrix</a-typography-title>
-    <a-alert
-      type="info"
-      show-icon
-      message="M0 占位数据（对应 schemas/examples/bin-picking-rgb 演示第一幕）；M1 接入真实内核结果"
-      style="margin-bottom: 16px"
-    />
-    <a-table :columns="columns" :data-source="rows" :pagination="false" row-key="reqId">
+
+    <a-space style="margin-bottom: 16px" wrap>
+      <a-select v-model:value="projectId" style="width: 260px" placeholder="选择项目" :loading="loadingProjects"
+                :options="projectOptions" @change="loadSystems" />
+      <a-select v-model:value="systemConfigId" style="width: 260px" placeholder="选择系统配置"
+                :options="systemOptions" :disabled="!projectId" />
+      <a-button type="primary" :loading="running" :disabled="!projectId || !systemConfigId" @click="runVerification">
+        运行验证
+      </a-button>
+      <a-button v-if="lastRunId" @click="downloadReport">下载报告 (Markdown)</a-button>
+    </a-space>
+
+    <a-alert v-if="runMeta" type="info" show-icon style="margin-bottom: 16px"
+             :message="`run ${runMeta.runId} · kernel ${runMeta.kernelVersion} · traceId ${runMeta.traceId}`" />
+
+    <a-table :columns="columns" :data-source="rows" :pagination="false" row-key="requirementId"
+             :loading="running" size="middle">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'status'">
           <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
         </template>
-        <template v-else-if="column.key === 'evidence'">
-          <a>{{ record.evidence }}</a>
+        <template v-else-if="column.key === 'observed'">
+          {{ record.observed ?? '—' }} {{ record.unit ?? '' }}
+        </template>
+        <template v-else-if="column.key === 'evidenceId'">
+          <a @click="showDetail(record)">{{ record.evidenceId ?? '—' }}</a>
         </template>
       </template>
     </a-table>
+
+    <a-drawer v-model:open="drawerOpen" width="560" :title="detailTitle">
+      <template v-if="detail">
+        <p><b>判定：</b><a-tag :color="statusColor(detail.status)">{{ detail.status }}</a-tag></p>
+        <p><b>详情：</b>{{ detail.detail }}</p>
+        <template v-if="contributors.length">
+          <p><b>贡献度：</b></p>
+          <div v-for="c in contributors" :key="c.name" style="margin: 2px 0">
+            <a-progress :percent="Math.round(c.share * 100)" size="small" style="width: 300px"
+                        :format="() => c.name" />
+          </div>
+        </template>
+        <template v-if="assumptions.length">
+          <p style="margin-top: 12px"><b>假设清单（provenance）：</b></p>
+          <ul>
+            <li v-for="(a, i) in assumptions" :key="i">
+              <a-tag color="orange">{{ a.provenance }}</a-tag> {{ a.name }}：{{ a.note }}
+            </li>
+          </ul>
+        </template>
+      </template>
+    </a-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { message } from 'ant-design-vue'
 import { http } from '../api/http'
 
-interface MatrixRow {
-  reqId: string
+interface Project { id: string; name: string }
+interface SystemConf { id: string; name?: string; ir?: { id?: string; name?: string } }
+interface Item {
+  requirementId: string
   metric: string
-  observed: string
-  required: string
   status: 'PASS' | 'FAIL' | 'UNKNOWN'
-  evidence: string
+  observed?: number | null
+  unit?: string | null
+  percentile?: string | null
+  detail?: string | null
+  evidenceId?: string | null
+  evidence?: { result?: { contributors?: { name: string; share: number }[]; minProvenance?: string }, assumptions?: { name: string; provenance: string; note: string }[] }
 }
 
 const columns = [
-  { title: '需求', dataIndex: 'reqId', key: 'reqId' },
+  { title: '需求', dataIndex: 'requirementId', key: 'requirementId' },
   { title: '指标', dataIndex: 'metric', key: 'metric' },
-  { title: '现值', dataIndex: 'observed', key: 'observed' },
-  { title: '要求', dataIndex: 'required', key: 'required' },
-  { title: '判定', dataIndex: 'status', key: 'status' },
-  { title: '证据', dataIndex: 'evidence', key: 'evidence' },
+  { title: '现值', key: 'observed' },
+  { title: '分位', dataIndex: 'percentile', key: 'percentile' },
+  { title: '判定', key: 'status' },
+  { title: '证据', key: 'evidenceId' },
 ]
 
-// M0 静态占位（README Demo 第一幕数值）；M1 由 /api/verification/runs 结果替换
-const rows = ref<MatrixRow[]>([
-  { reqId: 'R001', metric: '定位精度（P95）', observed: '7.1 mm', required: '≤ 3 mm', status: 'FAIL', evidence: 'E102' },
-  { reqId: 'R002', metric: '可达范围', observed: '1.1 m', required: '≥ 1.0 m', status: 'PASS', evidence: 'E103' },
-  { reqId: 'R003', metric: '节拍（P95）', observed: '5.4 s', required: '≤ 6 s', status: 'PASS', evidence: 'E104' },
-  { reqId: 'R004', metric: '抓取成功率', observed: '94 %', required: '≥ 98 %', status: 'FAIL', evidence: 'E105' },
-  { reqId: 'R005', metric: '端到端时延（P95）', observed: '—', required: '≤ 100 ms', status: 'UNKNOWN', evidence: '—' },
-])
+const projects = ref<Project[]>([])
+const systems = ref<SystemConf[]>([])
+const projectId = ref<string>('')
+const systemConfigId = ref<string>('')
+const rows = ref<Item[]>([])
+const running = ref(false)
+const loadingProjects = ref(false)
+const lastRunId = ref('')
+const runMeta = ref<{ runId: string; kernelVersion: string; traceId: string } | null>(null)
+const drawerOpen = ref(false)
+const detail = ref<Item | null>(null)
 
-function statusColor(status: MatrixRow['status']): string {
+const projectOptions = computed(() => projects.value.map((p) => ({ value: p.id, label: p.name })))
+const systemOptions = computed(() =>
+  systems.value.map((s, i) => ({ value: s.id, label: s.ir?.name || s.name || `system-${i + 1}` })),
+)
+const contributors = computed(() => detail.value?.evidence?.result?.contributors ?? [])
+const assumptions = computed(() => detail.value?.evidence?.assumptions ?? [])
+const detailTitle = computed(() =>
+  detail.value ? `${detail.value.requirementId} · ${detail.value.metric}` : '')
+
+onMounted(async () => {
+  loadingProjects.value = true
+  try {
+    projects.value = await http.get<Project[]>('/api/projects')
+  } finally {
+    loadingProjects.value = false
+  }
+})
+
+async function loadSystems() {
+  systemConfigId.value = ''
+  systems.value = []
+  if (!projectId.value) return
+  systems.value = await http.get<SystemConf[]>(`/api/projects/${projectId.value}/systems`)
+}
+
+async function runVerification() {
+  running.value = true
+  try {
+    const result = await http.post<{ runId: string; kernelVersion: string; traceId: string; items: Item[] }>(
+      '/api/verification/runs', { projectId: projectId.value, systemConfigId: systemConfigId.value })
+    lastRunId.value = result.runId
+    runMeta.value = result
+    rows.value = result.items
+    const failed = result.items.filter((i) => i.status === 'FAIL').length
+    message.info(`验证完成：${result.items.length} 项，FAIL ${failed} 项`)
+  } catch (e) {
+    message.error((e as Error).message)
+  } finally {
+    running.value = false
+  }
+}
+
+async function showDetail(item: Item) {
+  if (!item.evidence && lastRunId.value) {
+    const items = await http.get<Item[]>(`/api/verification/runs/${lastRunId.value}/items`)
+    const full = items.find((i) => i.requirementId === item.requirementId)
+    detail.value = full ?? item
+  } else {
+    detail.value = item
+  }
+  drawerOpen.value = true
+}
+
+async function downloadReport() {
+  const token = localStorage.getItem('rv_token') ?? ''
+  const resp = await fetch(`/api/verification/runs/${lastRunId.value}/report`, {
+    headers: { Authorization: token },
+  })
+  const blob = await resp.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `verification-report-${lastRunId.value}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function statusColor(status: Item['status']): string {
   if (status === 'PASS') return 'green'
   if (status === 'FAIL') return 'red'
   return 'orange'
 }
-
-// 预留：拉取真实项目列表（backend 就绪后启用）
-void http
 </script>
-
-<style scoped></style>
