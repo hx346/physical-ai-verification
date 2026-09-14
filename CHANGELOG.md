@@ -7,69 +7,30 @@
 
 ### Added
 
-- **仿真证据落库 + 矩阵下钻（M2 DoD 完结）**：`SimulationController`（POST /api/simulations 派发、
-  GET 轮询摄取幂等、按项目/需求查询）；摄取时 scene.sdf/run.log 归档对象存储
-  （/sim-logs/{jobKey}/…，evidence.artifacts 引用）；前端矩阵 Drawer 关联仿真证据区块（metrics+artifacts）；
-  demo 第八幕（SIM=1 可选）
+- **仿真证据落库 + 矩阵下钻（M2 DoD 完结，2026-09-15）**：`SimulationController`（POST /api/simulations
+  派发、GET 轮询摄取幂等、按项目/需求查询）；摄取时 scene.sdf/run.log 归档对象存储
+  （/sim-logs/{jobKey}/…，evidence.artifacts 引用）；前端矩阵 Drawer 关联仿真证据区块；demo 第八幕（SIM=1 可选）
 - **job 队列能力路由**：job_queue.requires 列（Flyway V6）+ worker ROBOVERIFY_WORKER_CAPABILITIES
-  （sim-worker=gz），requires 非空的任务只被具备能力的 worker 认领（修复普通 worker 误领仿真任务失败）
-- simulation handler 带回 SDF 全文 + requestedMetrics 可得性诚实标注（unavailable 不编造）
-
-- **gz-sim 集成实测打通（M2 核心验证）**：官方 OCI 镜像 `ghcr.io/j-rivero/gazebo:harmonic-full`
-  （gz 8.10.0，2.74GB）无 GPU 无头渲染（ogre2/EGL）通过——rgbd 相机产出 image/depth_image/points
-  话题且有数据帧；sim-worker 容器（profile=sim）消费 simulation job SUCCEEDED，指标全真实且自洽
-  （sim_time 113s / RTF 0.998 / 113933 iterations / 相机激活）
-- **报告下载归档对象存储（首个 ObjectStore 业务调用点）**：`/reports/run-{id}/report.md`
-  首次快照幂等、故障降级不阻断下载；容器级数据面 E2E 实测 Java→SigV4→SeaweedFS 3634B 逐字节一致
-- gz adapter 真实指标采集改造：后台 server + stats 话题采样（sim_time/RTF/iterations）+ 话题探测
-  （depth_camera_active）+ SDF 模型计数，替掉占位解析（不编造原则）
-
-### Changed
-
-- scene_builder 修复：gz world 补 systems 插件（Physics/UserCommands/SceneBroadcaster/Sensors+ogre2）
-  ——缺失时传感器不实例化、物理不步进（容器实测抓出）
-- runtime 兼容 py3.10（sim-worker 的 gz 镜像基于 Ubuntu 22.04）：`datetime.UTC`→`timezone.utc`，
-  requires-python/ruff target 放宽至 3.10；gz.Dockerfile 去掉不被识别的 `--break-system-packages`
-- springdoc 3.1.1 试装后回退：官方称支持 Boot 4 但在 4.1 + starter-webmvc 下自动配置未装配
-  （/v3/api-docs 无映射），pom 中注释保留待上游适配
-
-- `SeaweedS3ObjectStore`：SeaweedFS S3 网关主实现（type=seaweed-s3，ADR-0005）——自研 SigV4 签名器 `S3Signer`
-  （零 AWS SDK 依赖，AWS 官方测试向量黄金验证通过），桶懒创建幂等、DELETE 幂等、非法 key 拒绝；
-  单测 10 个（官方向量 3 + fake S3 服务器 7）
-- `deploy/docker-compose.yml`：SeaweedFS 单容器（`weed server -s3`，master+volume+filer+S3 一进程）
-  + `deploy/seaweedfs/s3.json` 凭据 + `deploy/.env.example`
-- `deploy/demo/verify-seaweedfs.sh`：S3 协议 E2E 一键断言（python stdlib 独立 SigV4 与 Java 实现交叉验证）
-- gz-sim 官方 OCI 镜像路径修正：`ghcr.io/j-rivero/gazebo:harmonic-full`（原 `ghcr.io/gazebosim/gz-sim` 不存在，
-  经 ghcr token 探测与官方公告证实）
+  （sim-worker=gz），requires 非空的任务只被具备能力的 worker 认领
+- **gz-sim 集成实测打通（2026-09-15）**：官方 OCI 镜像 `ghcr.io/j-rivero/gazebo:harmonic-full`（gz 8.10.0）
+  无 GPU 无头渲染（ogre2/EGL）通过——rgbd 相机产出 image/depth_image/points 话题且有数据帧；
+  simulation job 容器实测 SUCCEEDED（sim_time 113s / RTF 0.998 / 113933 iterations，指标全真实自洽）
+- **报告下载归档对象存储（首个 ObjectStore 业务调用点）**：/reports/run-{id}/report.md 首次快照幂等、
+  故障降级不阻断下载；数据面 E2E 实测 Java→SigV4→SeaweedFS 3634B 逐字节一致
+- **`SeaweedS3ObjectStore`（SeaweedFS 主实现，type=seaweed-s3）**：自研 S3Signer SigV4（零 AWS SDK 依赖，
+  AWS 官方测试向量黄金验证），桶懒创建/DELETE 幂等/非法 key 拒绝；SeaweedFS 单容器部署
+  （weed server -s3）+ verify-seaweedfs.sh 一键 E2E + .env.example
+- gz adapter 真实指标采集（stats 话题采样 + 话题探测 + SDF 模型计数）；simulation handler
+  requestedMetrics 可得性诚实标注（unavailable 不编造）
 
 ### Changed
 
-- 对象存储最终确认：MinIO → **SeaweedFS（S3 协议）**（"seafs" 命名歧义由用户二次确认消解，ADR-0005 重写；
-  Seafile/WebDAV 适配器保留为备选实现，compose 栈移除）
-- evidence IR `artifacts[].store` 枚举新增 `seaweedfs`（保留 `seafile` 兼容）
-- compose：backend 增加 `ROBOVERIFY_S3_*` 存储切换环境变量直通（默认 local 行为不变）
-
-- 仓库骨架：双语 README（`README.md` / `README.zh-CN.md`）
-- 系统架构文档 `docs/architecture.md`
-- 开发计划 `docs/development-plan.md`（M0–M4 里程碑 + 产品验证门禁）
-- 架构决策记录 ADR-0001 ~ ADR-0005
-- 开发基础设施 `deploy/docker-compose.yml`（PostgreSQL 17 + Seafile 栈）
-- M0 脚手架：9 个 Engineering IR JSON Schema + 示例（21 实例校验通过）、
-  backend（Spring Boot 4.1 / Java 25，Flyway V1+V2，Sa-Token，JSON 日志，traceId 贯通）、
-  runtime（FastAPI，schema 校验，SKIP LOCKED worker 骨架）、frontend（Vue 3 + AntD，验证矩阵页）
-
-### Changed
-
-- 对象存储：MinIO → Seafile（WebDAV，经 ObjectStore SPI 抽象，ADR-0005）
-- 部署形态：应用全部容器化（backend/runtime/frontend 进 compose，不在开发机本地跑进程）
-- M0 数据访问降级 JdbcTemplate（MyBatis-Plus 无 Boot4 starter，M1 回归）
-
-### Verified
-
-- IR 契约：21 个示例实例全部通过 Schema 校验
-- backend：`mvn verify` 7 tests 通过；容器化前后 E2E（登录/鉴权/内核透传/traceId 贯通/inputFingerprint）验证
-- runtime：pytest 5 passed；`/ready` 连 PG 正常
-- frontend：`npm run build` 通过
+- **对象存储最终确认：MinIO → SeaweedFS（S3 协议）**（"seafs" 命名歧义由用户二次确认消解，
+  ADR-0005 重写改名；Seafile/WebDAV 适配器保留为备选，compose 栈移除）
+- scene_builder 修复：gz world 补 systems 插件（Physics/Sensors 等）——缺失时传感器静默不实例化（实测抓出）
+- runtime 兼容 py3.10（gz 镜像 Ubuntu 22.04）：timezone.utc 替 datetime.UTC，requires-python/ruff 放宽
+- evidence IR `artifacts[].store` 枚举 +seaweedfs；gz OCI 镜像路径修正（原 gazebosim/gz-sim 不存在）
+- springdoc 3.1.1 试装后回退：Boot 4.1 + starter-webmvc 下自动配置未装配，pom 注释保留待上游
 
 ## [M1–M4] — 2026-09-14
 
