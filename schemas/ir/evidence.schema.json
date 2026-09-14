@@ -75,7 +75,7 @@
         "additionalProperties": false,
         "properties": {
           "name": { "type": "string" },
-          "store": { "enum": ["seafile", "local", "inline"] },
+          "store": { "enum": ["seaweedfs", "local", "inline", "seafile"] },
           "key": { "type": "string" },
           "mediaType": { "type": "string" }
         }

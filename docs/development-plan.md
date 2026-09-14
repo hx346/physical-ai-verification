@@ -116,7 +116,7 @@
 - [x] 队列消费/状态查询/幂等（job_key 唯一；experiment 类型已验证全链路）
 - [x] Worker 崩溃重启后 RUNNING 任务可恢复（心跳超时回收，代码实现+单测覆盖 claim 路径）
 - [ ] gz 仿真任务实际执行：**代码完成（SDF 场景生成 + gz 适配器 + compose profile=sim），镜像路径已验证（2026-09-14：Gazebo 官方 OCI 镜像在 `ghcr.io/j-rivero/gazebo:harmonic-full`，OSRA 官方支持；原 `ghcr.io/gazebosim/gz-sim` 不存在已修正），无头渲染集成待 Robotics 工程师窗口验证**（无 gz 运行时显式失败，不编造结果）
-- [ ] 仿真证据在 Verification Matrix 下钻至 Seafile 对象（Seafile WebDAV 适配器已提前实现并单测通过，剩容器级 E2E + gz 集成联动）
+- [ ] 仿真证据在 Verification Matrix 下钻至 SeaweedFS 对象（SeaweedS3ObjectStore 已实现：自研 SigV4 经 AWS 官方向量验证 + fake S3 单测 7/7；剩容器级 E2E（`deploy/demo/verify-seaweedfs.sh`）+ gz 集成联动）
 
 ---
 

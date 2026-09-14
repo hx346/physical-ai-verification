@@ -80,7 +80,7 @@ Example — the page the whole product hangs on:
                │           └─────────┬─────────┘
                ▼                     ▼
         ┌────────────────────────────────────┐
-        │  PostgreSQL (JSONB)  ·  Seafile    │  IRs · evidence · URDF/CAD · logs · reports
+        │  PostgreSQL (JSONB) · SeaweedFS  │  IRs · evidence · URDF/CAD · logs · reports
         └────────────────────────────────────┘
 ```
 
@@ -95,7 +95,7 @@ Full design: [`docs/architecture.md`](./docs/architecture.md) · Decisions: [`do
 | Kinematics & collision | Pinocchio · python-fcl / trimesh |
 | Sensitivity & DOE | SALib · (later: pymoo · Optuna) |
 | Simulation | gz-sim + ROS 2 in Linux Docker behind an adapter SPI (Isaac Sim at V0.5) |
-| Data | PostgreSQL 17+ (relational + JSONB) · Seafile via WebDAV behind an ObjectStore SPI (URDF / CAD / datasets / logs / reports) |
+| Data | PostgreSQL 17+ (relational + JSONB) · SeaweedFS (S3) behind an ObjectStore SPI (URDF / CAD / datasets / logs / reports) |
 | Queue | PostgreSQL `FOR UPDATE SKIP LOCKED` (Temporal only when scale demands it) |
 | Frontend | Vue 3 · TypeScript · Vite · Ant Design Vue · ECharts |
 | LLM | Provider-agnostic adapter, optional — core flows work without any LLM |
@@ -131,8 +131,8 @@ docker compose up -d postgres backend runtime frontend   # build images on first
 # Backend API  -> http://localhost:18090/actuator/health
 # Runtime      -> http://localhost:18081/health
 # PostgreSQL   -> localhost:15432          (roboverify / roboverify)
-docker compose up -d            # optional: also start the Seafile object-store stack
-# Seafile Web  -> http://localhost:18080  (admin@roboverify.local / roboverify123)
+docker compose up -d            # optional: also start the SeaweedFS object store
+# SeaweedFS S3 -> localhost:18333 (roboverify / roboverify-secret), status: localhost:19333
 ```
 
 After changing code: `docker compose build backend runtime frontend && docker compose up -d`.

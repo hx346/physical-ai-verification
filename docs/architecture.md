@@ -41,7 +41,7 @@ RoboVerify 是 **Engineering Verification Runtime**：输入 Requirement IR + Sy
                           └──────────┬──────────┘
                                      │ 证据回写
         ┌────────────────────────────▼───────┐
-        │ PostgreSQL 17 (JSONB)  ·  Seafile  │
+        │ PostgreSQL 17 (JSONB) · SeaweedFS │
         └────────────────────────────────────┘
                           ▲
               ┌───────────┴───────────┐
@@ -109,7 +109,7 @@ datasheet（厂商手册，乐观偏置） < literature（公开评测） < meas
 
 ## 7. 数据模型概览（Flyway 管理，V1 于 M0 落地）
 
-核心表：`project`、`requirement`（JSONB 存 Requirement IR）、`system_config`（System IR）、`asset`（IR 全文 JSONB，provenance 由导入侧 Schema 强校验）、`state_spec`、`task_def`、`verification_run`（一次验证编排）、`verification_item`（矩阵中的一行）、`evidence`（Evidence IR + Seafile 对象 key 引用）、`job_queue`、`model_version`、`audit_log`。
+核心表：`project`、`requirement`（JSONB 存 Requirement IR）、`system_config`（System IR）、`asset`（IR 全文 JSONB，provenance 由导入侧 Schema 强校验）、`state_spec`、`task_def`、`verification_run`（一次验证编排）、`verification_item`（矩阵中的一行）、`evidence`（Evidence IR + SeaweedFS 对象 key 引用）、`job_queue`、`model_version`、`audit_log`。
 
 Evidence Graph 用关系表表达（`evidence.requirement_id / run_id / parent_evidence_id`），不引入图数据库（ADR-0002）。所有写操作带 `trace_id` 列 + 审计表。
 
@@ -117,7 +117,7 @@ Evidence Graph 用关系表表达（`evidence.requirement_id / run_id / parent_e
 
 | 环境 | 形态 | 说明 |
 |---|---|---|
-| 开发/部署（统一） | **Docker 全容器**：`docker compose up -d postgres backend runtime frontend`（+ 可选 Seafile 栈） | 应用一律容器化，不在开发机本地跑进程；改代码后 `docker compose build` 重建 |
+| 开发/部署（统一） | **Docker 全容器**：`docker compose up -d postgres backend runtime frontend`（+ 可选 SeaweedFS 对象存储） | 应用一律容器化，不在开发机本地跑进程；改代码后 `docker compose build` 重建 |
 | 生产（V0.1~V0.5） | 单机 Linux + 同一套 docker compose | 一台工作站足够 |
 | 生产（V0.8+） | K8s + GPU 调度 + 多租户 | 届时另行设计，不预实现 |
 

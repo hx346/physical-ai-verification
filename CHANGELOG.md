@@ -7,6 +7,22 @@
 
 ### Added
 
+- `SeaweedS3ObjectStore`：SeaweedFS S3 网关主实现（type=seaweed-s3，ADR-0005）——自研 SigV4 签名器 `S3Signer`
+  （零 AWS SDK 依赖，AWS 官方测试向量黄金验证通过），桶懒创建幂等、DELETE 幂等、非法 key 拒绝；
+  单测 10 个（官方向量 3 + fake S3 服务器 7）
+- `deploy/docker-compose.yml`：SeaweedFS 单容器（`weed server -s3`，master+volume+filer+S3 一进程）
+  + `deploy/seaweedfs/s3.json` 凭据 + `deploy/.env.example`
+- `deploy/demo/verify-seaweedfs.sh`：S3 协议 E2E 一键断言（python stdlib 独立 SigV4 与 Java 实现交叉验证）
+- gz-sim 官方 OCI 镜像路径修正：`ghcr.io/j-rivero/gazebo:harmonic-full`（原 `ghcr.io/gazebosim/gz-sim` 不存在，
+  经 ghcr token 探测与官方公告证实）
+
+### Changed
+
+- 对象存储最终确认：MinIO → **SeaweedFS（S3 协议）**（"seafs" 命名歧义由用户二次确认消解，ADR-0005 重写；
+  Seafile/WebDAV 适配器保留为备选实现，compose 栈移除）
+- evidence IR `artifacts[].store` 枚举新增 `seaweedfs`（保留 `seafile` 兼容）
+- compose：backend 增加 `ROBOVERIFY_S3_*` 存储切换环境变量直通（默认 local 行为不变）
+
 - 仓库骨架：双语 README（`README.md` / `README.zh-CN.md`）
 - 系统架构文档 `docs/architecture.md`
 - 开发计划 `docs/development-plan.md`（M0–M4 里程碑 + 产品验证门禁）

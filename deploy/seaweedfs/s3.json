@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "roboverify",
+      "credentials": [
+        {
+          "accessKey": "roboverify",
+          "secretKey": "roboverify-secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

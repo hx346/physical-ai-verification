@@ -29,6 +29,6 @@ assumptions:
     provenance: measured
     sourceRef: calib-report-2026-09-10
 artifacts:
-  - { name: error-budget.xlsx, store: seafile, key: /roboverify/runs/run-demo-rgb-0001/error-budget.xlsx }
+  - { name: error-budget.xlsx, store: seaweedfs, key: /roboverify/runs/run-demo-rgb-0001/error-budget.xlsx }
 traceId: 4f9c1d2e8a
 createdAt: "2026-09-14T10:30:00Z"

@@ -76,7 +76,7 @@ RoboVerify 是面向机器人与物理智能系统的**工程验证运行时（E
                │           └─────────┬─────────┘
                ▼                     ▼
         ┌────────────────────────────────────┐
-        │  PostgreSQL (JSONB)  ·  Seafile    │  IR · 证据 · URDF/CAD · 日志 · 报告
+        │  PostgreSQL (JSONB) · SeaweedFS  │  IR · 证据 · URDF/CAD · 日志 · 报告
         └────────────────────────────────────┘
 ```
 
@@ -91,7 +91,7 @@ RoboVerify 是面向机器人与物理智能系统的**工程验证运行时（E
 | 运动学 / 碰撞 | Pinocchio · python-fcl / trimesh |
 | 敏感性 / 实验设计 | SALib ·（后续：pymoo · Optuna） |
 | 仿真 | gz-sim + ROS 2，Linux Docker，走适配器 SPI（V0.5 接 Isaac Sim） |
-| 数据 | PostgreSQL 17+（关系 + JSONB）· Seafile/WebDAV（经 ObjectStore SPI 抽象；URDF / CAD / 数据集 / 日志 / 报告） |
+| 数据 | PostgreSQL 17+（关系 + JSONB）· SeaweedFS/S3（经 ObjectStore SPI 抽象；URDF / CAD / 数据集 / 日志 / 报告） |
 | 队列 | PostgreSQL `FOR UPDATE SKIP LOCKED`（规模上来才引入 Temporal） |
 | 前端 | Vue 3 · TypeScript · Vite · Ant Design Vue · ECharts |
 | LLM | 供应商无关适配器，可选——核心流程不依赖任何 LLM |
@@ -127,8 +127,8 @@ docker compose up -d postgres backend runtime frontend   # 首次会构建镜像
 # Backend API  -> http://localhost:18090/actuator/health
 # Runtime      -> http://localhost:18081/health
 # PostgreSQL   -> localhost:15432（roboverify / roboverify）
-docker compose up -d            # 可选：同时启动 Seafile 对象存储栈
-# Seafile Web  -> http://localhost:18080（admin@roboverify.local / roboverify123）
+docker compose up -d            # 可选：同时启动 SeaweedFS 对象存储
+# SeaweedFS S3 -> localhost:18333（roboverify / roboverify-secret），状态页 localhost:19333
 ```
 
 改代码后：`docker compose build backend runtime frontend && docker compose up -d`。
