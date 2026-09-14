@@ -1,0 +1,122 @@
+openapi: 3.1.0
+info:
+  title: Platform ↔ Runtime contract
+  description: |
+    REST contract between the Java Platform and the Python Engineering Runtime (ADR-0001).
+    The runtime is stateless; all verdict logic lives here, all persistence lives in the platform.
+    Auth (M1+): internal service token via X-Service-Token header.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8081
+    description: local dev
+paths:
+  /health:
+    get:
+      summary: Liveness
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: liveness_ok }
+  /ready:
+    get:
+      summary: Readiness (checks DB connectivity)
+      responses:
+        "200": { description: Ready }
+        "503": { description: Not ready }
+  /api/v1/verify:
+    post:
+      summary: Run analytic verification (constraint + uncertainty + timing + observability)
+      description: |
+        Idempotent by requestId. Returns one verdict item per requirement.
+        Verdicts: PASS / FAIL / UNKNOWN (UNKNOWN when inputs are missing or provenance is insufficient).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, requirements, system]
+              properties:
+                requestId: { type: string }
+                traceId: { type: string }
+                requirements:
+                  type: array
+                  minItems: 1
+                  items: { $ref: "#/components/schemas/Requirement" }
+                system: { $ref: "#/components/schemas/SystemIR" }
+                environment: { type: object }
+                states: { type: array, items: { type: object } }
+                assets:
+                  type: array
+                  description: resolved Asset Registry entries referenced by system.components
+                  items: { type: object }
+                options:
+                  type: object
+                  properties:
+                    monte_carlo_n: { type: integer, default: 10000 }
+                    seed: { type: integer }
+      responses:
+        "200":
+          description: Verdicts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, kernelVersion, items]
+                properties:
+                  requestId: { type: string }
+                  traceId: { type: string }
+                  kernelVersion: { type: string }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [requirementId, status, method]
+                      properties:
+                        requirementId: { type: string }
+                        status: { enum: [PASS, FAIL, UNKNOWN] }
+                        method: { type: string }
+                        observed: { type: number }
+                        unit: { type: string }
+                        percentile: { type: string }
+                        detail: { type: string }
+                        minProvenance: { enum: [datasheet, literature, measured, calibrated] }
+                        missingInputs: { type: array, items: { type: string } }
+                  warnings: { type: array, items: { type: string } }
+        "422":
+          description: Payload failed IR schema validation
+components:
+  schemas:
+    Requirement:
+      type: object
+      required: [id, metric, operator, value]
+      properties:
+        id: { type: string }
+        metric: { type: string }
+        operator: { type: string }
+        value: { type: number }
+        unit: { type: string }
+        percentile: { type: string }
+        confidence: { type: number }
+    SystemIR:
+      type: object
+      required: [id, components]
+      properties:
+        id: { type: string }
+        components:
+          type: array
+          items:
+            type: object
+            required: [id, type, assetId]
+            properties:
+              id: { type: string }
+              type: { type: string }
+              assetId: { type: string }
+              mountPose: { type: object }
+              params: { type: object }

@@ -1,0 +1,19 @@
+# M3 Demo：1000 次实验的参数空间（plan §15）
+schemaVersion: "0.1.0"
+id: exp-bin-picking-1000
+projectId: proj-bin-picking-demo
+parameters:
+  - { name: illumination_lux, distribution: uniform, range: [100, 50000], unit: lux }
+  - { name: occlusion_percent, distribution: uniform, range: [0, 70], unit: "%" }
+  - { name: depth_noise_mm, distribution: uniform, range: [0, 10], unit: mm }
+  - { name: object_size_mm, distribution: uniform, range: [20, 80], unit: mm }
+  - { name: network_latency_ms, distribution: uniform, range: [5, 200], unit: ms }
+  - { name: friction_coeff, distribution: uniform, range: [0.1, 0.9] }
+sampling:
+  method: lhs
+  n: 1000
+  seed: 20260914
+  batch_size: 50
+aggregation:
+  metric: picking_success_rate
+  statistic: success_rate

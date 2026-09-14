@@ -76,7 +76,7 @@ RoboVerify 是面向机器人与物理智能系统的**工程验证运行时（E
                │           └─────────┬─────────┘
                ▼                     ▼
         ┌────────────────────────────────────┐
-        │  PostgreSQL (JSONB)  ·  MinIO      │  IR · 证据 · URDF/CAD · 日志 · 报告
+        │  PostgreSQL (JSONB)  ·  Seafile    │  IR · 证据 · URDF/CAD · 日志 · 报告
         └────────────────────────────────────┘
 ```
 
@@ -86,12 +86,12 @@ RoboVerify 是面向机器人与物理智能系统的**工程验证运行时（E
 
 | 层 | 选型 |
 |---|---|
-| 平台 API | Java 25 (LTS) · Spring Boot 4.x · MyBatis-Plus · Flyway · Sa-Token · springdoc-openapi |
+| 平台 API | Java 25 (LTS) · Spring Boot 4.x · Flyway · Sa-Token · M0 用 JdbcTemplate（MyBatis-Plus 待其 Boot4 starter 发布后回归） |
 | 工程运行时 | Python 3.12+ · FastAPI · NumPy / SciPy / Pandas · Pydantic v2 |
 | 运动学 / 碰撞 | Pinocchio · python-fcl / trimesh |
 | 敏感性 / 实验设计 | SALib ·（后续：pymoo · Optuna） |
 | 仿真 | gz-sim + ROS 2，Linux Docker，走适配器 SPI（V0.5 接 Isaac Sim） |
-| 数据 | PostgreSQL 17+（关系 + JSONB）· MinIO（URDF / CAD / 数据集 / 日志 / 报告） |
+| 数据 | PostgreSQL 17+（关系 + JSONB）· Seafile/WebDAV（经 ObjectStore SPI 抽象；URDF / CAD / 数据集 / 日志 / 报告） |
 | 队列 | PostgreSQL `FOR UPDATE SKIP LOCKED`（规模上来才引入 Temporal） |
 | 前端 | Vue 3 · TypeScript · Vite · Ant Design Vue · ECharts |
 | LLM | 供应商无关适配器，可选——核心流程不依赖任何 LLM |
@@ -114,18 +114,24 @@ RoboVerify 是面向机器人与物理智能系统的**工程验证运行时（E
 └── deploy/                       docker-compose、环境模板、部署文档
 ```
 
-## 快速开始（基础设施）
+## 快速开始（Docker 全栈）
 
-应用服务随 M0 里程碑落地，数据层现在即可运行：
+一切跑在容器里——宿主机只需要 Docker，不在本地部署任何进程：
 
 ```bash
 git clone git@github.com:hx346/physical-ai-verification.git
 cd physical-ai-verification/deploy
-docker compose up -d
+docker compose up -d postgres backend runtime frontend   # 首次会构建镜像
 
-# PostgreSQL    -> localhost:15432（roboverify / roboverify，库：roboverify）
-# MinIO 控制台  -> http://localhost:19001（roboverify / roboverify）
+# Web 界面     -> http://localhost:18000（admin / roboverify123）
+# Backend API  -> http://localhost:18090/actuator/health
+# Runtime      -> http://localhost:18081/health
+# PostgreSQL   -> localhost:15432（roboverify / roboverify）
+docker compose up -d            # 可选：同时启动 Seafile 对象存储栈
+# Seafile Web  -> http://localhost:18080（admin@roboverify.local / roboverify123）
 ```
+
+改代码后：`docker compose build backend runtime frontend && docker compose up -d`。
 
 ## 路线图
 

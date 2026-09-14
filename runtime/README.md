@@ -18,3 +18,9 @@ runtime/
 依赖基线：fastapi · pydantic v2 · numpy · scipy · pandas · structlog ·（M2 起：pinocchio、trimesh/python-fcl、gz-ros 容器内依赖）。
 
 **Windows 注意**：解析式内核（kernel/）可直接在 Windows 开发；仿真相关（sim_adapters/）只在 Linux Docker/WSL2 内运行（ADR-0003）。
+
+运行方式：
+- **Docker（正式形态）**：`deploy/docker-compose.yml` 的 `runtime` 服务（镜像内含 IR 契约 `/app/schemas`）。
+- 本地开发调试：`python -m venv .venv && ./.venv/Scripts/python -m pip install -e ".[dev]"`，
+  然后 `./.venv/Scripts/python -m uvicorn roboverify_runtime.main:app --port 8081`；
+  测试 `./.venv/Scripts/python -m pytest`（队列测试需 `ROBOVERIFY_TEST_PG=1` 且 PG 在 15432）。

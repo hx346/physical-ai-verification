@@ -1,0 +1,33 @@
+# Demo 第一幕配置：Robot A + RGB 相机 + 夹爪 B —— 预期 FAIL（深度不可观测）
+schemaVersion: "0.1.0"
+id: sys-rgb-binpicking
+name: "Bin Picking — RGB 配置（预期 FAIL）"
+projectId: proj-bin-picking-demo
+components:
+  - id: robot-1
+    type: robot
+    assetId: asset-robot-a
+  - id: cam-overhead-1
+    type: camera
+    assetId: asset-rgb-cam-b
+    mountPose:
+      x: 0.0
+      y: 0.0
+      z: 1.2
+      roll: 0
+      pitch: 90   # 朝下
+      yaw: 0
+      frame: world
+  - id: gripper-1
+    type: gripper
+    assetId: asset-gripper-b
+calibrations:
+  - type: hand_eye
+    method: tsai_lenz
+    residual:
+      reprojection_px: 0.5
+      translation_mm: 1.2
+network:
+  topology: camera->switch->pc->robot-controller
+  latency_ms: 12
+  jitter_ms: 3

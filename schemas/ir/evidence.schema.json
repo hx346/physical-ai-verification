@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roboverify.dev/schemas/ir/evidence.schema.json",
+  "title": "Evidence IR",
+  "description": "Every engineering conclusion must be backed by evidence records with input fingerprint, versions, trace and provenance of assumptions (ADR-0004).",
+  "type": "object",
+  "required": ["schemaVersion", "id", "type", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string", "pattern": "^E[0-9]+$" },
+    "type": { "enum": ["formula", "simulation", "experiment", "real_test", "assumption"] },
+    "requirementRefs": { "type": "array", "items": { "type": "string" } },
+    "runRef": { "type": "string", "description": "verification run / simulation run / experiment batch id" },
+    "parentEvidenceId": { "type": ["string", "null"], "description": "evidence graph edge" },
+    "kernelVersion": { "type": "string" },
+    "modelVersions": { "type": "object", "additionalProperties": { "type": "string" }, "description": "asset error-model versions used, e.g. {asset-rgbd-cam-c: 'v0.2-draft'}" },
+    "inputFingerprint": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["PASS", "FAIL", "UNKNOWN"] },
+        "observed": { "type": "number" },
+        "unit": { "type": "string" },
+        "percentile": { "type": "string", "examples": ["P95"] },
+        "ci": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "lower": { "type": "number" }, "upper": { "type": "number" }, "level": { "type": "number" } }
+        },
+        "samples": { "type": "integer" },
+        "detail": { "type": "string" },
+        "contributors": {
+          "type": "array",
+          "description": "ranked failure/contribution factors, e.g. [{name: depth_error, share: 0.31}]",
+          "items": {
+            "type": "object",
+            "required": ["name", "share"],
+            "additionalProperties": false,
+            "properties": { "name": { "type": "string" }, "share": { "type": "number", "minimum": 0, "maximum": 1 } }
+          }
+        },
+        "minProvenance": { "enum": ["datasheet", "literature", "measured", "calibrated"], "description": "weakest provenance level among inputs used for this verdict" }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "provenance"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "provenance": { "enum": ["datasheet", "literature", "measured", "calibrated"] },
+          "sourceRef": { "type": "string" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "store", "key"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "store": { "enum": ["seafile", "local", "inline"] },
+          "key": { "type": "string" },
+          "mediaType": { "type": "string" }
+        }
+      }
+    },
+    "traceId": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

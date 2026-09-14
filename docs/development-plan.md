@@ -113,7 +113,7 @@
 
 - [ ] API 提交 100 个仿真任务 → 队列消费完成 → 状态/进度可查 → 证据入库（幂等：重复提交同 job_key 不产生重复证据）
 - [ ] Worker 崩溃重启后 RUNNING 任务可恢复（心跳超时回收）
-- [ ] 仿真证据在 Verification Matrix 可下钻至原始日志（MinIO 对象）
+- [ ] 仿真证据在 Verification Matrix 可下钻至原始日志（Seafile 对象）
 - [ ] 3 个冒烟场景 CI 稳定通过（连续 3 天）
 
 ---

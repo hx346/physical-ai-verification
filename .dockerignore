@@ -1,0 +1,21 @@
+# 根 build context 的统一忽略（backend/runtime/frontend 共用根 context）
+plan/
+.git/
+.idea/
+.vscode/
+**/node_modules/
+**/target/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/dist/
+deploy/data/
+**/data/
+logs/
+*.log
+.github/
+docs/
+*.md
+!frontend/README.md
+!runtime/README.md
