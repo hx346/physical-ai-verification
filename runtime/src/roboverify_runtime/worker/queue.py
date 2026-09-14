@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import psycopg
 
@@ -85,7 +85,7 @@ def heartbeat(conn: psycopg.Connection, job_id: int) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE job_queue SET timeout_at = %s, updated_at = now() WHERE id = %s AND status = 'RUNNING'",
-            (datetime.now(UTC) + timedelta(seconds=settings.worker_lock_ttl_s), job_id),
+            (datetime.now(timezone.utc) + timedelta(seconds=settings.worker_lock_ttl_s), job_id),
         )
 
 

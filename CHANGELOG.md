@@ -7,6 +7,24 @@
 
 ### Added
 
+- **gz-sim 集成实测打通（M2 核心验证）**：官方 OCI 镜像 `ghcr.io/j-rivero/gazebo:harmonic-full`
+  （gz 8.10.0，2.74GB）无 GPU 无头渲染（ogre2/EGL）通过——rgbd 相机产出 image/depth_image/points
+  话题且有数据帧；sim-worker 容器（profile=sim）消费 simulation job SUCCEEDED，指标全真实且自洽
+  （sim_time 113s / RTF 0.998 / 113933 iterations / 相机激活）
+- **报告下载归档对象存储（首个 ObjectStore 业务调用点）**：`/reports/run-{id}/report.md`
+  首次快照幂等、故障降级不阻断下载；容器级数据面 E2E 实测 Java→SigV4→SeaweedFS 3634B 逐字节一致
+- gz adapter 真实指标采集改造：后台 server + stats 话题采样（sim_time/RTF/iterations）+ 话题探测
+  （depth_camera_active）+ SDF 模型计数，替掉占位解析（不编造原则）
+
+### Changed
+
+- scene_builder 修复：gz world 补 systems 插件（Physics/UserCommands/SceneBroadcaster/Sensors+ogre2）
+  ——缺失时传感器不实例化、物理不步进（容器实测抓出）
+- runtime 兼容 py3.10（sim-worker 的 gz 镜像基于 Ubuntu 22.04）：`datetime.UTC`→`timezone.utc`，
+  requires-python/ruff target 放宽至 3.10；gz.Dockerfile 去掉不被识别的 `--break-system-packages`
+- springdoc 3.1.1 试装后回退：官方称支持 Boot 4 但在 4.1 + starter-webmvc 下自动配置未装配
+  （/v3/api-docs 无映射），pom 中注释保留待上游适配
+
 - `SeaweedS3ObjectStore`：SeaweedFS S3 网关主实现（type=seaweed-s3，ADR-0005）——自研 SigV4 签名器 `S3Signer`
   （零 AWS SDK 依赖，AWS 官方测试向量黄金验证通过），桶懒创建幂等、DELETE 幂等、非法 key 拒绝；
   单测 10 个（官方向量 3 + fake S3 服务器 7）

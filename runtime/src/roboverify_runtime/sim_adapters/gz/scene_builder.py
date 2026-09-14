@@ -16,6 +16,13 @@ WORLD_TEMPLATE = """<?xml version="1.0" ?>
       <real_time_factor>1.0</real_time_factor>
     </physics>
     <gravity>0 0 -9.8</gravity>
+    <!-- gz-sim systems：缺 Physics 不步进；缺 Sensors 则 rgbd 相机不实例化（2026-09-15 实测抓出） -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
     <light type="directional" name="sun">
       <cast_shadows>true</cast_shadows>
       <pose>0 0 10 0 0 0</pose>

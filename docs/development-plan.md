@@ -111,12 +111,12 @@
 4. **基础指标仿真化验证**：reach/collision/cycle/FOV 四项从解析式切换为"解析式 + 仿真双证据"
 5. **CI 仿真冒烟**：Linux runner 跑 3 个最小场景（headless、限时）
 
-### M2 DoD ⚠ 部分达成（2026-09-14：编排与队列全通，gz 集成待验证）
+### M2 DoD ⚠ 大部分达成（2026-09-15：gz 仿真任务实际执行已验证 ✓，剩证据落库与矩阵下钻）
 
 - [x] 队列消费/状态查询/幂等（job_key 唯一；experiment 类型已验证全链路）
 - [x] Worker 崩溃重启后 RUNNING 任务可恢复（心跳超时回收，代码实现+单测覆盖 claim 路径）
-- [ ] gz 仿真任务实际执行：**代码完成（SDF 场景生成 + gz 适配器 + compose profile=sim），镜像路径已验证（2026-09-14：Gazebo 官方 OCI 镜像在 `ghcr.io/j-rivero/gazebo:harmonic-full`，OSRA 官方支持；原 `ghcr.io/gazebosim/gz-sim` 不存在已修正），无头渲染集成待 Robotics 工程师窗口验证**（无 gz 运行时显式失败，不编造结果）
-- [ ] 仿真证据在 Verification Matrix 下钻至 SeaweedFS 对象（SeaweedS3ObjectStore 已实现：自研 SigV4 经 AWS 官方向量验证 + fake S3 单测 7/7；剩容器级 E2E（`deploy/demo/verify-seaweedfs.sh`）+ gz 集成联动）
+- [x] gz 仿真任务实际执行（**2026-09-15 容器实测**：官方 OCI 镜像 `ghcr.io/j-rivero/gazebo:harmonic-full`（gz 8.10.0）+ 无 GPU 无头渲染 ogre2/EGL 通过——rgbd 相机产出 image/depth_image/points 话题且有数据帧；sim-worker 容器（profile=sim）消费 simulation job #8 SUCCEEDED，真实指标 sim_time_s=113 / RTF=0.998 / physics_iterations=113933 / depth_camera_active=1。实测抓出并修复：scene_builder 缺 gz systems 插件（Physics/Sensors）→ 传感器不实例化）
+- [ ] 仿真证据进 Verification Matrix：simulation job 结果目前存 job payload，尚缺 evidence 落库 + 矩阵下钻至 SeaweedFS 对象（存储链路已全通：SeaweedS3ObjectStore 四层验证 + 报告归档数据面 E2E）
 
 ---
 

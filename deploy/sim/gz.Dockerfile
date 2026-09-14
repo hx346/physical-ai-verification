@@ -16,7 +16,7 @@ ENV ROBOVERIFY_SCHEMA_DIR=/app/schemas \
 
 COPY runtime/pyproject.toml runtime/README.md ./
 COPY runtime/src ./src
-RUN pip3 install --no-cache-dir --break-system-packages .
+RUN pip3 install --no-cache-dir .
 COPY schemas /app/schemas
 
 # 仿真 worker：同一任务消费循环，gz 可执行文件在本镜像内可用

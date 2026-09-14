@@ -2,7 +2,7 @@
 name = "roboverify-runtime"
 version = "0.1.0"
 description = "RoboVerify engineering runtime — verification kernel, workers, simulation adapters"
-requires-python = ">=3.12"
+requires-python = ">=3.10"  # 主镜像 3.13；sim-worker（gz harmonic-full 基 Ubuntu 22.04）为 3.10，仅跑 worker/sim 路径
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -36,7 +36,7 @@ addopts = "-q"
 
 [tool.ruff]
 line-length = 110
-target-version = "py312"
+target-version = "py310"  # 最低支持 3.10（sim-worker 的 gz 镜像），主镜像 3.13 亦兼容
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
