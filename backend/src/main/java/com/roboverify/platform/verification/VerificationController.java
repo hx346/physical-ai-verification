@@ -51,6 +51,6 @@ public class VerificationController {
 
     @GetMapping(value = "/runs/{runId}/report", produces = MediaType.TEXT_MARKDOWN_VALUE)
     public String report(@PathVariable String runId) {
-        return reportService.render(runId, null);
+        return reportService.renderAndArchive(runId, null);
     }
 }
