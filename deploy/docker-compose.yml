@@ -3,7 +3,7 @@
 #
 # Usage:
 #   docker compose up -d postgres                            # 仅数据库（本地调代码用）
-#   docker compose up -d postgres backend runtime frontend   # 应用全栈（正式形态）
+#   docker compose up -d postgres backend runtime worker frontend   # 应用全栈（正式形态）
 #   docker compose up -d                                     # 全量（再加 Seafile 栈）
 #
 #   Frontend  -> http://localhost:18000
@@ -60,6 +60,34 @@ services:
       timeout: 5s
       retries: 18
       start_period: 20s
+    restart: unless-stopped
+
+  # 实验引擎 worker：同一镜像，跑任务消费循环（SKIP LOCKED）
+  worker:
+    build:
+      context: ..
+      dockerfile: runtime/Dockerfile
+    container_name: roboverify-worker
+    command: ["python", "-m", "roboverify_runtime.worker.runner"]
+    environment:
+      ROBOVERIFY_DATABASE_URL: postgresql://roboverify:roboverify@postgres:5432/roboverify
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 仿真 worker（M2 集成待验证）：docker compose --profile sim up -d sim-worker
+  sim-worker:
+    build:
+      context: ..
+      dockerfile: deploy/sim/gz.Dockerfile
+    container_name: roboverify-sim-worker
+    profiles: ["sim"]
+    environment:
+      ROBOVERIFY_DATABASE_URL: postgresql://roboverify:roboverify@postgres:5432/roboverify
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:

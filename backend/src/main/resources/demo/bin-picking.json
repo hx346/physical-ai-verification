@@ -1,0 +1,42 @@
+{
+  "requirements": [
+    {"schemaVersion": "0.1.0", "id": "R001", "metric": "picking_success_rate", "operator": ">=", "value": 0.98, "unit": "ratio", "percentile": "mean", "confidence": 0.95, "priority": "critical", "source": "manual", "description": "零件抓取成功率 ≥ 98%（连续 8 小时运行）"},
+    {"schemaVersion": "0.1.0", "id": "R002", "metric": "cycle_time", "operator": "<=", "value": 6, "unit": "s", "percentile": "P95", "priority": "critical", "source": "manual", "description": "单循环节拍 P95 ≤ 6s"},
+    {"schemaVersion": "0.1.0", "id": "R003", "metric": "position_accuracy", "operator": "<=", "value": 3, "unit": "mm", "percentile": "P95", "priority": "critical", "source": "manual", "description": "目标定位精度 P95 ≤ 3mm"},
+    {"schemaVersion": "0.1.0", "id": "R004", "metric": "end_to_end_latency", "operator": "<=", "value": 100, "unit": "ms", "percentile": "P95", "priority": "high", "source": "manual", "description": "感知到控制端到端时延 P95 ≤ 100ms"},
+    {"schemaVersion": "0.1.0", "id": "R005", "metric": "reach", "operator": ">=", "value": 1.0, "unit": "m", "percentile": "mean", "priority": "critical", "source": "manual", "description": "覆盖料箱最远角落所需可达半径 ≥ 1.0m"}
+  ],
+  "environment": {
+    "schemaVersion": "0.1.0", "id": "env-bin-picking-demo",
+    "bin": {"width_mm": 600, "height_mm": 300, "depth_mm": 400, "wall_thickness_mm": 2, "material": "steel"},
+    "parts": [{"name": "engine-part", "size_mm": {"min": 20, "max": 80}, "material": "steel", "reflectivity": "semi", "mass_g": {"min": 50, "max": 800}, "stack": "random"}],
+    "illumination": {"lux": {"min": 500, "max": 5000}, "source": "mixed"},
+    "occlusion": {"percent": {"min": 0, "max": 70}},
+    "temperature_c": {"min": 15, "max": 40},
+    "network": {"latency_ms": {"min": 5, "max": 200}, "jitter_ms_max": 20}
+  },
+  "systems": [
+    {
+      "schemaVersion": "0.1.0", "id": "sys-rgb-binpicking", "name": "RGB 配置（预期 FAIL）",
+      "components": [
+        {"id": "robot-1", "type": "robot", "assetId": "asset-robot-a"},
+        {"id": "cam-overhead-1", "type": "camera", "assetId": "asset-rgb-cam-b",
+         "mountPose": {"x": 0.0, "y": 0.0, "z": 0.85, "roll": 0, "pitch": 90, "yaw": 0, "frame": "world"}},
+        {"id": "gripper-1", "type": "gripper", "assetId": "asset-gripper-b"}
+      ],
+      "calibrations": [{"type": "hand_eye", "method": "tsai_lenz", "residual": {"reprojection_px": 0.5, "translation_mm": 1.2}}],
+      "network": {"topology": "camera->switch->pc->robot-controller", "latency_ms": 12, "jitter_ms": 3}
+    },
+    {
+      "schemaVersion": "0.1.0", "id": "sys-rgbd-binpicking", "name": "RGB-D 配置（预期 PASS）",
+      "components": [
+        {"id": "robot-1", "type": "robot", "assetId": "asset-robot-a"},
+        {"id": "cam-overhead-1", "type": "depth_camera", "assetId": "asset-rgbd-cam-c",
+         "mountPose": {"x": 0.0, "y": 0.0, "z": 0.65, "roll": 0, "pitch": 90, "yaw": 0, "frame": "world"}},
+        {"id": "gripper-1", "type": "gripper", "assetId": "asset-gripper-b"}
+      ],
+      "calibrations": [{"type": "hand_eye", "method": "tsai_lenz", "residual": {"reprojection_px": 0.4, "translation_mm": 0.8}}],
+      "network": {"topology": "camera->switch->pc->robot-controller", "latency_ms": 12, "jitter_ms": 3}
+    }
+  ]
+}

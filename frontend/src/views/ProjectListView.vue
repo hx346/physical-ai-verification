@@ -7,6 +7,9 @@
         <template v-if="column.key === 'status'">
           <a-tag :color="record.status === 'ACTIVE' ? 'blue' : 'default'">{{ record.status }}</a-tag>
         </template>
+        <template v-else-if="column.key === 'actions'">
+          <a-button size="small" @click="seedDemo(record)">导入演示数据</a-button>
+        </template>
       </template>
     </a-table>
 
@@ -40,6 +43,7 @@ const columns = [
   { title: '项目名', dataIndex: 'name', key: 'name' },
   { title: '描述', dataIndex: 'description', key: 'description' },
   { title: '状态', dataIndex: 'status', key: 'status' },
+  { title: '操作', key: 'actions', width: 140 },
 ]
 
 const projects = ref<Project[]>([])
@@ -69,6 +73,16 @@ async function create() {
     newName.value = ''
     newDesc.value = ''
     await load()
+  } catch (e) {
+    message.error((e as Error).message)
+  }
+}
+
+async function seedDemo(project: Project) {
+  try {
+    const r = await http.post<{ requirements: number; systems: number }>(
+      `/api/projects/${project.id}/seed-demo`, {})
+    message.success(`已导入演示数据：${r.requirements} 条需求 + ${r.systems} 个系统配置（幂等）`)
   } catch (e) {
     message.error((e as Error).message)
   }

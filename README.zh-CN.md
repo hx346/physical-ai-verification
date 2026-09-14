@@ -149,7 +149,13 @@ docker compose up -d            # 可选：同时启动 Seafile 对象存储栈
 
 ## 当前状态
 
-**P0 —— 产品验证期。** 第一个季度只有一个目标：证明"自动工程验证"本身具有真实价值。一个场景、一个仿真器、一套 IR、一个验证内核、一个实验引擎、一套证据链、一次真实项目验证。Go/No-Go 门禁见[开发计划 §6](./docs/development-plan.md)。
+**V0.1 代码完成（2026-09-14）**：解析式验证内核（约束/不确定性/时延/可观测性/成功率模型）、
+验证编排与证据链（输入指纹+内核版本+假设清单+traceId）、实验引擎（LHS/MC + Sobol 敏感性，
+worker 异步）、报告（Markdown，含实验证据节）、真机只读链路（CSV 遥测 + Sim2Real Gap +
+校准版本状态机）全部可用；gz-sim 适配器与 ROS 2 采集器为**代码完成、集成待验证**（见
+[CHANGELOG](./CHANGELOG.md) Pending 项）。全链路演示：`bash deploy/demo/run-demo.sh`。
+
+仍处 **P0 产品验证期**：技术里程碑之外，Gate 1（历史项目回放 recall ≥ 70%）决定是否继续产品化。
 
 ## 许可证
 

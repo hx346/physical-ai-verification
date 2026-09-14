@@ -1,9 +1,10 @@
 package com.roboverify.platform.verification;
 
 import com.roboverify.platform.common.api.Result;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
-import org.slf4j.MDC;
+import jakarta.validation.constraints.NotBlank;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,36 +14,43 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * M0：内核透传端点——验证 backend→runtime 全链路（traceId 贯通为 M0 DoD）。
- * M1 将升级为 verification_run 编排（落 run/item/evidence 表）。
+ * 验证编排端点：POST /runs 触发一次验证（需求集×系统配置），结果含证据引用。
  */
 @RestController
 @RequestMapping("/api/verification")
 public class VerificationController {
 
-    private final RuntimeClient runtimeClient;
+    private final VerificationRunService runService;
+    private final ReportService reportService;
 
-    public VerificationController(RuntimeClient runtimeClient) {
-        this.runtimeClient = runtimeClient;
+    public VerificationController(VerificationRunService runService, ReportService reportService) {
+        this.runService = runService;
+        this.reportService = reportService;
     }
 
-    public record VerifyPassThroughRequest(
-            @NotEmpty(message = "requirements 不能为空") List<Map<String, Object>> requirements,
-            @NotNull(message = "system 不能为空") Map<String, Object> system,
-            Map<String, Object> environment
+    public record RunRequest(
+            @NotBlank(message = "projectId 不能为空") String projectId,
+            @NotBlank(message = "systemConfigId 不能为空") String systemConfigId
     ) {
     }
 
-    @PostMapping("/verify")
-    public Result<Map<String, Object>> verify(@jakarta.validation.Valid @RequestBody VerifyPassThroughRequest request) {
-        Map<String, Object> payload = new java.util.HashMap<>();
-        payload.put("requestId", "req-" + System.nanoTime());
-        payload.put("traceId", MDC.get("traceId"));
-        payload.put("requirements", request.requirements());
-        payload.put("system", request.system());
-        if (request.environment() != null) {
-            payload.put("environment", request.environment());
-        }
-        return Result.ok(runtimeClient.verify(payload));
+    @PostMapping("/runs")
+    public Result<Map<String, Object>> run(@jakarta.validation.Valid @RequestBody RunRequest request) {
+        return Result.ok(runService.run(request.projectId(), request.systemConfigId()));
+    }
+
+    @GetMapping("/projects/{projectId}/runs")
+    public Result<List<Map<String, Object>>> runs(@PathVariable String projectId) {
+        return Result.ok(runService.findRuns(projectId));
+    }
+
+    @GetMapping("/runs/{runId}/items")
+    public Result<List<Map<String, Object>>> items(@PathVariable String runId) {
+        return Result.ok(runService.findItems(runId));
+    }
+
+    @GetMapping(value = "/runs/{runId}/report", produces = MediaType.TEXT_MARKDOWN_VALUE)
+    public String report(@PathVariable String runId) {
+        return reportService.render(runId, null);
     }
 }

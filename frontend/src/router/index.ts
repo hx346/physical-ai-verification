@@ -24,6 +24,11 @@ const router = createRouter({
           name: 'matrix',
           component: () => import('../views/VerificationMatrixView.vue'),
         },
+        {
+          path: 'experiment',
+          name: 'experiment',
+          component: () => import('../views/ExperimentView.vue'),
+        },
       ],
     },
   ],
