@@ -1,0 +1,51 @@
+# RoboVerify development infrastructure (M0 baseline).
+# Starts PostgreSQL + MinIO only. Backend / runtime / frontend services land in M0.
+#
+# Usage:
+#   cd deploy && docker compose up -d
+#   PostgreSQL  -> localhost:15432  (roboverify / roboverify, db: roboverify)
+#   MinIO API   -> localhost:19000
+#   MinIO console -> http://localhost:19001 (roboverify / roboverify)
+#
+# Non-default host ports avoid clashing with locally installed PG/MinIO.
+# Override via .env (see .env.example).
+
+name: roboverify
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: roboverify-postgres
+    environment:
+      POSTGRES_USER: roboverify
+      POSTGRES_PASSWORD: roboverify
+      POSTGRES_DB: roboverify
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roboverify -d roboverify"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest # TODO(M0): pin an explicit release tag
+    container_name: roboverify-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: roboverify
+      MINIO_ROOT_PASSWORD: roboverify
+    ports:
+      - "${MINIO_API_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes:
+      - ./data/minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
