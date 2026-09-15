@@ -19,6 +19,7 @@ from __future__ import annotations
 import copy
 import random
 import time
+from collections.abc import Callable
 
 import numpy as np
 
@@ -31,8 +32,13 @@ log = get_logger("experiment.sim_backend")
 AGG_METRICS = ("pick_success", "cycle_time_s", "position_error_mm", "collision_count")
 
 
-def run_simulation_experiment(experiment: dict) -> dict:
-    """完整仿真实验：采样 → 逐 run headless gz → 聚合 + 敏感性。"""
+def run_simulation_experiment(experiment: dict,
+                              progress_cb: Callable[[int, int], None] | None = None) -> dict:
+    """完整仿真实验：采样 → 逐 run headless gz → 聚合 + 敏感性。
+
+    progress_cb(done, total)：每 run 完成后回调（进度可见性；回调异常由
+    调用方负责吞掉，不得影响实验本体）。
+    """
     params = experiment["parameters"]
     sampling = experiment["sampling"]
     n = int(sampling["n"])
@@ -83,6 +89,8 @@ def run_simulation_experiment(experiment: dict) -> dict:
         log.info("sim experiment run", i=i + 1, n=n, wall_s=run_rec["wall_s"],
                  pick_success=run_rec.get("metrics", {}).get("pick_success"),
                  depth_noise_mm=row.get("depth_noise_mm"))
+        if progress_cb is not None:
+            progress_cb(i + 1, n)
     batch_wall = time.monotonic() - t_batch
 
     return _aggregate(experiment, runs, names, X, batch_wall)

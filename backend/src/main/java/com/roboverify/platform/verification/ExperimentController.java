@@ -27,6 +27,7 @@ import java.util.Map;
 @RequestMapping("/api/experiments")
 public class ExperimentController {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ExperimentController.class);
     private static final String JOB_TYPE_EXPERIMENT = "experiment";
     private static final String DEFAULT_EXPERIMENT_ID = "exp-bin-picking-1000";
     private static final String SIM_EXPERIMENT_ID = "exp-bin-picking-sim";
@@ -138,6 +139,18 @@ public class ExperimentController {
         out.put("jobKey", job.jobKey());
         out.put("status", job.status());
         out.put("lastError", job.lastError());
+        // V0.5 W1.4：批量仿真实验的批次进度（worker 每 run 完成写 payload.progress）
+        try {
+            String payloadJson = jdbcTemplate.queryForObject(
+                    "SELECT payload::text FROM job_queue WHERE job_key=?", String.class, jobKey);
+            JsonNode progress = objectMapper.readTree(payloadJson == null ? "{}" : payloadJson)
+                    .path("progress");
+            if (progress.isObject()) {
+                out.put("progress", objectMapper.convertValue(progress, Map.class));
+            }
+        } catch (Exception e) {
+            log.debug("progress unavailable, jobKey={}: {}", jobKey, e.getMessage());
+        }
 
         if ("SUCCEEDED".equals(job.status())) {
             Map<String, Object> ingested = ingestIfNeeded(jobKey);

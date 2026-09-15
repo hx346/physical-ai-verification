@@ -300,6 +300,63 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
   - **87 同步**：本地侧就绪（5 自建镜像 build+导出 E:\rv-deploy-87\
     roboverify-images-w4.tar.gz，1.1GB）；执行时 87 离线（ping 100% 丢包、
     ssh 超时×3），远端步骤待服务器恢复后执行（scp→load→up，禁 pull/build）。
+
+---
+
+# 11. V0.5 — Experiment Platform（产品路线 §44 下一站）
+
+> 注：产品方案版本号从 V0.3 直跳 V0.5（无 V0.4）——此前 W1-W4 为 V0.3 的**周编号**。
+> V0.3 W4 已交付 experiment backend=simulator v0（单 job 串行 50-run + SRC 敏感性）；
+> V0.5 把实验做成平台一等公民：并行编排、断点续跑、配置对照、感知闭环抓取。
+> 基准：2026-09-15 起，4 周节奏（单人主力）。
+
+## 目标
+
+实验（Experiment）从"一次 API 调用"升级为可运维、可对照、可扩展的证据生产线：
+1. **吞吐**：N 次仿真从单 worker 串行（50 次≈50min）到并行 worker 池（≈50/N 分钟）
+2. **韧性**：批次断点续跑（中断/失败 run 复用已完成结果，不重烧 1h）
+3. **对照**：同参数空间多系统配置 A/B 对照平台化（demo 第二幕手工流程产品化）
+4. **保真**：抓取从"真值+注入噪声"升级为"深度相机感知定位"（Real2Sim 核心预备）
+
+## 任务拆解
+
+1. **W1 批次编排生产化（DAG 化）** [风险: 中——幂等/聚合一致性]
+   1.1 experiment job 展开为 N 个 simulation 子 job（job_key=exp:{batch}:run:{i} 幂等）
+       + 1 个聚合 job（收割子结果 → 聚合 + SRC → evidence；心跳机制已有）
+   1.2 并行 sim-worker：compose `--scale sim-worker=N`（SKIP LOCKED 天然支持多 worker
+       抢占；单容器一 gz 实例，CPU 核数定 N）
+   1.3 断点续跑：聚合 job 发现已完成子 job（幂等 job_key 已存在即 SUCCEEDED）直接复用
+   1.4 批次进度可见：子 job 完成 → 父 job payload.progress={done,total} → status API 透出
+2. **W2 实验对照与报告** [风险: 低]
+   2.1 对照实验 API：POST /api/experiments/comparisons（同 experiment、多 systemConfigId）
+   2.2 对照报告章节：逐指标并列（含解析/仿真/实验三证据维度 + Wilson CI）
+   2.3 前端实验批次页（列表/进度/结果下钻）
+3. **W3 感知定位抓取 v0** [风险: 高——rgbd 数据链与标定]
+   3.1 深度图 → 零件定位（点云质心/深度聚类，标定外参），替代注入噪声
+   3.2 感知误差成为真实量（相机噪声模型 → 定位误差 → pick_success），
+       depth_noise 敏感性从"映射假设"变"实测链路"
+   3.3 与真值对照的感知误差指标入 evidence（定位误差分布）
+4. **W4 技术债与收尾** [风险: 低]
+   4.1 放置弹飞根治：位置控制夹持（use_force_commands=false 双模式）或 SDF 软接触参数
+       （V0.3 终局保留项：稳定场景 5.9-36mm，重零件仍弹飞 ~370mm）
+   4.2 全链路回归 + 87 同步 + dev-plan 收口
+
+## V0.5 DoD
+
+- [ ] 并行编排：3+ sim-worker 下 50-run 批次 wall ≤ 20min（单机 50min 基线）
+- [ ] 断点续跑：批次中断后重启，已完成 run 不重跑（验证：复用计数 = 已完成数）
+- [ ] 对照实验：同一实验两组相机配置对照，报告并列呈现（demo 第二幕平台化）
+- [ ] 感知抓取：深度定位误差实测入 evidence；depth_noise 敏感性来自真实感知链
+- [ ] 回归：demo 全幕 + 单次仿真 + 批量实验不回归；87 同步完成
+
+## 风险
+
+| 风险 | 等级 | 缓解 |
+|---|---|---|
+| DAG 聚合一致性（子 job 部分失败） | 中 | 聚合按 completed/failed 如实分组（W4 已有此语义），不掩盖 |
+| 感知定位精度不足（无标定真机外参） | 高 | 仿真内外参自洽（相机位姿来自场景 SDF 真值）；真机标定归 V0.8 |
+| 多 worker 资源争抢（CPU/内存） | 中 | N 按 CPU 核数上限约束；RTF 退化如实记录入 wall 曲线 |
+| 感知链与脚本序列耦合过深 | 中 | 定位模块独立（输入深度图 → 输出位姿假设），序列只消费接口 |
 - 2026-09-15 **W2 终局（碰撞单变量实验 + 15 轮生产迭代，commit 3 项根因修复）**：
   - **"DART 接触失效"假设被证伪**：单变量实验（deploy/sim/collision_probe.py，零 g/
     静态 base/单零件/仅闭合力）显示接触检测与响应从未缺失（82 万接触条目、指停在零件面
