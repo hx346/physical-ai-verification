@@ -54,18 +54,22 @@ class GzSimAdapter:
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             )
             try:
-                time.sleep(min(WARMUP_S, duration * 0.5))
+                scripted = (sim_ir.get("script") or {}).get("type") == "scripted_pick"
+                # scripted_pick：warmup 缩短——夹爪 15s 自由坠落会使指底扫碰零件顶（W2 实测根因）
+                time.sleep(min(6.0 if scripted else WARMUP_S, duration * 0.5))
                 topics = self._capture(["gz", "topic", "-l"])
                 pick_metrics: dict[str, float] = {}
-                # scripted_pick：抓取序列（V0.3 W1）——bundle 按 seed 确定性重建
-                if (sim_ir.get("script") or {}).get("type") == "scripted_pick":
+                if scripted:
+                    client = GzClient()
                     try:
                         bundle = build_scene_bundle(sim_ir)
-                        pick_metrics = run_pick_sequence(GzClient(), bundle, log)
+                        pick_metrics = run_pick_sequence(client, bundle, log)
                         log.info("pick sequence done", **pick_metrics)
                     except Exception as e:  # noqa: BLE001 — 序列失败不吞，如实记录
                         pick_metrics = {"pick_sequence_error": 1.0}
                         log.error("pick sequence failed", error=str(e), exc_info=True)
+                    finally:
+                        client.close()
                 stats = self._capture(["gz", "topic", "-e", "-t",
                                        f"/world/{WORLD_NAME}/stats", "-n", "1"])
             finally:

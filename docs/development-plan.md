@@ -229,9 +229,19 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
    - 验证 dev-plan 假设：单工作站 N 次 headless 耗时曲线（1000 次不现实则 50–100 次，
      结果显式标注采样规模）
 
+## V0.3 进展记录
+
+- 2026-09-15 W1：驱动机制定型（VelocityControl cmd_vel + JointPositionController model 级），
+  抓取序列全链路 SUCCEEDED，pick_success/cycle_time_s/position_error_mm 三项 measured
+- 2026-09-15 W2：控制环提速（PoseStreamer 持续订阅）；**根因修复×2**——warmup 15s 坠落致指底
+  扫碰零件（缩短至 6s + 实时 xy 追踪）、闭合冲击弹飞（渐进闭合）；零件不再被弹离（留原位±5mm）
+- W2 剩余：夹持力平衡（当前夹住后升 ~10mm 滑脱——DART 摩擦夹持的力/摩擦/质量平衡调优，
+  含指闭合到位诊断）；collision_count 待接 contacts 数据源
+
 ## V0.3 DoD
 
 - [ ] 四项 IR 请求指标 measured（单次仿真实测，数字自洽可追溯 evidence）
+  （当前 3/4：pick_success 真实测量为 0——失败被如实记录，正是验证系统的意义）
 - [ ] 仿真结论参与矩阵（requirement 有阈值时可给 SIM_PASS/SIM_FAIL）
 - [ ] 批量仿真 ≥50 次跑通，敏感性排名与解析引擎方向一致（深度噪声主导类）
 - [ ] 全链路回归：demo 三幕 + 第八幕 + SeaweedFS 归档不回归

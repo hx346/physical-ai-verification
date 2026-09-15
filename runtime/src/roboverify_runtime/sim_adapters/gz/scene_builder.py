@@ -101,7 +101,7 @@ GRIPPER_TEMPLATE = """    <model name="gripper">
         <inertial><mass>0.2</mass></inertial>
         <collision name="coll">
           <geometry><box><size>0.05 0.012 0.12</size></box></geometry>
-          <surface><friction><ode><mu>2.0</mu><mu2>1.8</mu2></ode></friction></surface>
+          <surface><friction><ode><mu>3.0</mu><mu2>2.8</mu2></ode></friction></surface>
         </collision>
         <visual name="vis"><geometry><box><size>0.05 0.012 0.12</size></box></geometry>
           <material><diffuse>0.85 0.55 0.1 1</diffuse></material></visual>
@@ -111,7 +111,7 @@ GRIPPER_TEMPLATE = """    <model name="gripper">
         <inertial><mass>0.2</mass></inertial>
         <collision name="coll">
           <geometry><box><size>0.05 0.012 0.12</size></box></geometry>
-          <surface><friction><ode><mu>2.0</mu><mu2>1.8</mu2></ode></friction></surface>
+          <surface><friction><ode><mu>3.0</mu><mu2>2.8</mu2></ode></friction></surface>
         </collision>
         <visual name="vis"><geometry><box><size>0.05 0.012 0.12</size></box></geometry>
           <material><diffuse>0.85 0.55 0.1 1</diffuse></material></visual>
@@ -205,7 +205,7 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
         cam_yaw_rad=round(math.radians(pose.get("yaw", 0)), 4),
         fov_rad=round(2 * math.atan(math.tan(math.radians(fov_deg) / 2)), 4),
     )
-    half_grip = (target["size_m"] - 0.004) / 2.0  # 闭合半间隙：夹紧留 2mm 挤压量
+    half_grip = (target["size_m"] - 0.002) / 2.0  # 闭合半间隙：1mm 挤压量（渐进闭合防弹飞）
     return {
         "sdf": sdf,
         "target": {"name": f"part_{target['idx']}", **{k: target[k] for k in ("x", "y", "z", "size_m")}},

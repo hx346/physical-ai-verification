@@ -3,7 +3,7 @@
 > **AI proposes designs. RoboVerify proves them.**
 
 [![Status](https://img.shields.io/badge/status-P0%20Product%20Validation-orange)]()
-[![License](https://img.shields.io/badge/license-TBD-lightgrey)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 **中文文档：[README.zh-CN.md](./README.zh-CN.md)**
 
@@ -166,4 +166,4 @@ productization continues.
 
 ## License
 
-TBD.
+[MIT](./LICENSE) © 2026 hx346
