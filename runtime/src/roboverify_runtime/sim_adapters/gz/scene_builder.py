@@ -118,11 +118,11 @@ GRIPPER_TEMPLATE = """    <model name="gripper">
       </link>
       <joint name="finger_left_joint" type="prismatic">
         <parent>base</parent><child>finger_left</child>
-        <axis><xyz>1 0 0</xyz><limit><lower>0</lower><upper>0.06</upper></limit></axis>
+        <axis><xyz>1 0 0</xyz><limit><lower>0</lower><upper>{lim}</upper></limit></axis>
       </joint>
       <joint name="finger_right_joint" type="prismatic">
         <parent>base</parent><child>finger_right</child>
-        <axis><xyz>-1 0 0</xyz><limit><lower>0</lower><upper>0.06</upper></limit></axis>
+        <axis><xyz>-1 0 0</xyz><limit><lower>0</lower><upper>{lim}</upper></limit></axis>
       </joint>
       <!-- 整体速度控制（worker 发 /model/gripper/cmd_vel，gz.msgs.Twist）-->
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl"/>
@@ -188,9 +188,10 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     # 夹爪初始：目标正上方 0.45m，指张开间隙 = 目标宽 + 0.05（关节行程 0.05 封口）
     gap_open = target["size_m"] + 0.05
     gripper_z = 0.45
+    half_open_v = round(gap_open / 2, 4)
     fingers = GRIPPER_TEMPLATE.format(
         gx=target["x"], gy=target["y"], gz=gripper_z,
-        half_open=round(gap_open / 2, 4))
+        half_open=half_open_v, lim=round(half_open_v - 0.001, 4))
 
     sensor = (sim_ir.get("sensors") or [{}])[0]
     pose = sensor.get("pose") or {"x": 0.5, "y": 0.0, "z": 0.85, "pitch": 90, "yaw": 0}
@@ -205,8 +206,10 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
         cam_yaw_rad=round(math.radians(pose.get("yaw", 0)), 4),
         fov_rad=round(2 * math.atan(math.tan(math.radians(fov_deg) / 2)), 4),
     )
-    half_grip = (target["size_m"] - 0.002) / 2.0  # 闭合半间隙：1mm 挤压量（渐进闭合防弹飞）
+    half_grip = (target["size_m"] - 0.002) / 2.0  # 闭合半间隙：1mm 挤压量
+    grasp_force_n = float(((sim_ir.get("script") or {}).get("params") or {}).get("grasp_force_n", 40))
     return {
+        "graspForceN": grasp_force_n,
         "sdf": sdf,
         "target": {"name": f"part_{target['idx']}", **{k: target[k] for k in ("x", "y", "z", "size_m")}},
         "place": place,

@@ -155,10 +155,12 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
     live2 = client.pose_of(target["name"]) or live
     grasp_z = live2[2] + 0.075
     _move_to(client, (live2[0], live2[1], grasp_z))
-    # 3) 静止后极缓闭合（力超调/单侧接触都会把零件弹飞——实测教训）
+    # 3) 力控渐进夹紧：use_force_commands=true 时 cmd 是力值（N）——
+    #    W1-W2 曾误发位置值 0.027 当力（≈0.027N 零力，滑脱根因）。力来自 IR grasp_force_n。
     time.sleep(0.6)
-    for frac in (0.3, 0.55, 0.75, 0.9, 1.0):
-        client.pub_grip(grip_pos * frac)
+    force = bundle.get("graspForceN", 40.0)
+    for frac in (0.25, 0.5, 0.75, 1.0):
+        client.pub_grip(force * frac)
         time.sleep(0.7)
     time.sleep(1.0)
     # 4) 提升
@@ -170,8 +172,9 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
     # 5) 平移到放置点上方 → 下降 → 张开 → 回 home
     _move_to(client, (place["x"], place["y"], start_z))
     _move_to(client, (place["x"], place["y"], place["z"] + 0.075))
-    client.pub_grip(0.0)
+    client.pub_grip(-15.0)  # 负力张开（力控双向）
     time.sleep(1.0)
+    client.pub_grip(0.0)
     _move_to(client, (place["x"], place["y"], start_z))
     t1 = client.sim_time()
 

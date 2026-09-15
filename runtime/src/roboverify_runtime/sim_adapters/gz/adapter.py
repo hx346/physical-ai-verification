@@ -55,8 +55,20 @@ class GzSimAdapter:
             )
             try:
                 scripted = (sim_ir.get("script") or {}).get("type") == "scripted_pick"
-                # scripted_pick：warmup 缩短——夹爪 15s 自由坠落会使指底扫碰零件顶（W2 实测根因）
-                time.sleep(min(6.0 if scripted else WARMUP_S, duration * 0.5))
+                if scripted:
+                    # 悬停防坠（W2 终版根因链）：dynamic 夹爪无指令即自由坠落→撞 bin→
+                    # 姿态歪斜（无姿态控制不可修复）→后续必夹空。VelocityControl 的
+                    # twist 持续生效——Popen 后 1s 即开始零速轰炸：未就绪的发布被丢弃
+                    # （无害），订阅一建立立即悬停，零坠落窗口。
+                    time.sleep(1.0)
+                    for _ in range(20):
+                        subprocess.run(
+                            ["gz", "topic", "-t", "/model/gripper/cmd_vel",
+                             "--msgtype", "gz.msgs.Twist", "-p", "linear { x: 0 y: 0 z: 0 }",
+                             "--num", "1"], capture_output=True, timeout=6)
+                        time.sleep(0.3)
+                else:
+                    time.sleep(min(WARMUP_S, duration * 0.5))
                 topics = self._capture(["gz", "topic", "-l"])
                 pick_metrics: dict[str, float] = {}
                 if scripted:

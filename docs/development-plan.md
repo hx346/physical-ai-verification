@@ -235,8 +235,13 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
   抓取序列全链路 SUCCEEDED，pick_success/cycle_time_s/position_error_mm 三项 measured
 - 2026-09-15 W2：控制环提速（PoseStreamer 持续订阅）；**根因修复×2**——warmup 15s 坠落致指底
   扫碰零件（缩短至 6s + 实时 xy 追踪）、闭合冲击弹飞（渐进闭合）；零件不再被弹离（留原位±5mm）
-- W2 剩余：夹持力平衡（当前夹住后升 ~10mm 滑脱——DART 摩擦夹持的力/摩擦/质量平衡调优，
-  含指闭合到位诊断）；collision_count 待接 contacts 数据源
+- 2026-09-15 W2 续（10 轮容器迭代）：力语义修正（use_force_commands=true 时 cmd 是力 N，
+  曾误发位置值 0.027 当力≈0.027N）；悬停防坠轰炸（Popen 后 1s 起零速，杜绝坠落撞 bin 致姿态歪斜）；
+  关节限位防交叉（upper=half_open-1mm，曾允许指穿中线）；仿真对象 key 规范化（jobKey 冒号→连字符，
+  Windows 文件系统兼容）；对中已收敛（零件扰动 <5mm）
+- W2 剩余疑点（收敛后）：指-零件接触物理本身——诊断观测到力驱动下指可穿越零件空间而零件不动，
+  怀疑 DART 接触求解在该构型下失效（下一步：碰撞有效性单变量实验：零件置于两指间仅闭合力，
+  观察是否被阻挡；必要时调 solver iterations/接触刚度/换 bullet 引擎对比）；collision_count 待接
 
 ## V0.3 DoD
 

@@ -166,7 +166,8 @@ public class SimulationController {
         if (content == null || content.isEmpty()) {
             return;
         }
-        String key = "/sim-logs/" + jobKey + "/" + filename;
+        // jobKey 含 ":"（Windows 文件系统非法字符），对象 key 规范化替换
+        String key = "/sim-logs/" + jobKey.replace(":", "-") + "/" + filename;
         try {
             byte[] body = content.getBytes(StandardCharsets.UTF_8);
             objectStore.put(key, new ByteArrayInputStream(body), body.length, mediaType);
