@@ -242,11 +242,33 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 - W2 剩余疑点（收敛后）：指-零件接触物理本身——诊断观测到力驱动下指可穿越零件空间而零件不动，
   怀疑 DART 接触求解在该构型下失效（下一步：碰撞有效性单变量实验：零件置于两指间仅闭合力，
   观察是否被阻挡；必要时调 solver iterations/接触刚度/换 bullet 引擎对比）；collision_count 待接
+- 2026-09-15 **W2 终局（碰撞单变量实验 + 15 轮生产迭代，commit 3 项根因修复）**：
+  - **"DART 接触失效"假设被证伪**：单变量实验（deploy/sim/collision_probe.py，零 g/
+    静态 base/单零件/仅闭合力）显示接触检测与响应从未缺失（82 万接触条目、指停在零件面
+    ±0.025、bullet/dart 均可稳定夹持）。真凶组合：
+    ① **SDF `<inertial>` 缺 `<inertia>` 默认单位阵**（比真实值大 ~4 个数量级）→ LCP 病态
+    → 接触互踢弹跳（baseline 复现生产症状；显式盒惯量后稳定夹持）——全场景 link 补真实惯量；
+    ② **实心 bin**：零件生成在固体内部 → DART 深穿透弹射 = warmup 弹飞根因——改五面空心箱；
+    ③ **protobuf 文本格式省略零值字段**（position { z: 0.235 }，x/y=0 不打印）——位姿解析
+    要求 x/y/z 齐备 → 恰在坐标轴上的实体（含所有 finger link，y≡0）被漏读——逐轴可选解析。
+  - **collision_count 接通**：gz-sim8 Contact system 只发布 link 级 contact sensor 话题且仅
+    有接触时发消息（源码实证，/world/*/physics/contacts 话题不存在）——指面加 contact sensor
+    （/gripper/finger_*/contact），闭合→提升窗口计数，4/4 IR 指标 measured（E00174–E00188）。
+  - **夹爪控制面定型**：link 级 `<gravity>0</gravity>`（龙门架重力补偿——0.45m 自由落体 0.3s
+    即撞箱，零速轰炸来不及；dartsim 模型级 LinearVelocityCmd 零速指令下仍恒定下沉 g·dt
+    ≈0.0098m/s，关重力后零速精确悬停）；指长 0.02 抓零件上半侧；侧向下刀沿 y（x 下插被顶面
+    接触顶住、x 平移被开口侧指面顶住停在差 clearance 处→偏斜挤飞）。
+  - **运动传输瓶颈（诚实结论）**：one-shot CLI 发布（subprocess ~0.3s）+ 位姿流滞后 ~1s 下，
+    连续 P 发散（runaway x=2.11，接触对全是 finger↔bin_floor/wall）、等幅步过冲磕箱底、
+    精调步爬行超时；5Hz 持续发布线程后大位移收敛（lateral_ok=true、零件被咬住拖动 10cm）
+    但短距比例控制仍振荡——**需进程内 gz-transport 节点（W3 事项）**。pick_success 保持 0
+    是 15 轮真实结果，证据链完整；抓取物理本身已被单变量实验+生产接触流双重证明。
 
 ## V0.3 DoD
 
-- [ ] 四项 IR 请求指标 measured（单次仿真实测，数字自洽可追溯 evidence）
-  （当前 3/4：pick_success 真实测量为 0——失败被如实记录，正是验证系统的意义）
+- [x] 四项 IR 请求指标 measured（单次仿真实测，数字自洽可追溯 evidence）
+  （4/4：pick_success 真实测量为 0、collision_count 5648——失败被如实记录，
+  正是验证系统的意义；运动传输精度为 W3 攻坚项，见 W2 终局记录）
 - [ ] 仿真结论参与矩阵（requirement 有阈值时可给 SIM_PASS/SIM_FAIL）
 - [ ] 批量仿真 ≥50 次跑通，敏感性排名与解析引擎方向一致（深度噪声主导类）
 - [ ] 全链路回归：demo 三幕 + 第八幕 + SeaweedFS 归档不回归

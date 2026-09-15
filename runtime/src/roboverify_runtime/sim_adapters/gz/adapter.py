@@ -56,10 +56,9 @@ class GzSimAdapter:
             try:
                 scripted = (sim_ir.get("script") or {}).get("type") == "scripted_pick"
                 if scripted:
-                    # 悬停防坠（W2 终版根因链）：dynamic 夹爪无指令即自由坠落→撞 bin→
-                    # 姿态歪斜（无姿态控制不可修复）→后续必夹空。VelocityControl 的
-                    # twist 持续生效——Popen 后 1s 即开始零速轰炸：未就绪的发布被丢弃
-                    # （无害），订阅一建立立即悬停，零坠落窗口。
+                    # 悬停保持：夹爪已 link 级关重力（龙门架重力补偿，scene_builder），
+                    # 零速即精确悬停。此轰炸仅防早于订阅建立的发布丢失；暖机期坠落/
+                    # 撞 bin/姿态歪斜问题已由关重力根除。
                     time.sleep(1.0)
                     for _ in range(20):
                         subprocess.run(
@@ -101,6 +100,8 @@ class GzSimAdapter:
                 notes.append("警告：depth_image 话题未出现，相机传感器未激活（检查 Sensors 系统插件）")
             if "pick_sequence_error" in metrics:
                 notes.append("警告：抓取序列执行异常（详见 logExcerpt），指标缺失不编造")
+            elif pick_metrics.get("collision_count") == 0.0:
+                notes.append("警告：闭合-提升窗口两指零接触（collision_count=0），指未触及零件")
             return SimResult(
                 metrics=metrics,
                 log_excerpt=(server_out or "")[-4000:],

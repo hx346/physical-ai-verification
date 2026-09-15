@@ -12,7 +12,7 @@ sensors:
 environment:
   environment_ref: env-bin-picking-demo
   seed: 42
-  overrides: { illumination_lux: 2400, occlusion_percent: 35 }
+  overrides: { illumination_lux: 2400, occlusion_percent: 35, n_parts: 1 }  # W2: 单件箱内抓取；密集堆归 V0.4 感知规划
 script:
   type: scripted_pick
   params: { approach_speed_mm_s: 200, grasp_force_n: 60 }

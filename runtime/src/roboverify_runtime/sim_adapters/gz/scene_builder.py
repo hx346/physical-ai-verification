@@ -23,7 +23,8 @@ WORLD_TEMPLATE = """<?xml version="1.0" ?>
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
       <render_engine>ogre2</render_engine>
     </plugin>
-    <!-- 接触事件流（/world/bin_picking/physics/contacts）：夹持判定与碰撞计数的数据源 -->
+    <!-- 接触事件流：Contact system 只发布 link 级 contact sensor 的话题（gz-sim8 源码实证），
+         见 GRIPPER_TEMPLATE 指面的 /gripper/finger_*/contact -->
     <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
     <light type="directional" name="sun">
       <cast_shadows>true</cast_shadows>
@@ -44,18 +45,7 @@ WORLD_TEMPLATE = """<?xml version="1.0" ?>
         </visual>
       </link>
     </model>
-    <model name="bin">
-      <static>true</static>
-      <pose>0.5 0 0 0 0 0</pose>
-      <link name="link">
-        <collision name="coll">
-          <geometry><box><size>{bin_w} {bin_d} {bin_h}</size></box></geometry>
-        </collision>
-        <visual name="vis"><geometry><box><size>{bin_w} {bin_d} {bin_h}</size></box></geometry>
-          <material><diffuse>0.3 0.4 0.5 1</diffuse></material></visual>
-      </link>
-    </model>
-{parts}
+{bin}{parts}
 {fingers}
     <model name="camera_mount">
       <static>true</static>
@@ -79,7 +69,8 @@ WORLD_TEMPLATE = """<?xml version="1.0" ?>
 PART_TEMPLATE = """    <model name="part_{idx}">
       <pose>{x} {y} {z} {roll} {pitch} {yaw}</pose>
       <link name="link">
-        <inertial><mass>{mass}</mass></inertial>
+        <inertial><mass>{mass}</mass><inertia><ixx>{ixx}</ixx><iyy>{iyy}</iyy><izz>{izz}</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
         <collision name="coll"><geometry><box><size>{sx} {sy} {sz}</size></box></geometry>
           <surface><friction><ode><mu>{mu}</mu></ode></friction></surface></collision>
         <visual name="vis"><geometry><box><size>{sx} {sy} {sz}</size></box></geometry>
@@ -88,33 +79,100 @@ PART_TEMPLATE = """    <model name="part_{idx}">
     </model>"""
 
 
+BIN_TEMPLATE = """    <model name="bin_floor">
+      <static>true</static>
+      <pose>{cx} 0 {t} 0 0 0</pose>
+      <link name="link">
+        <collision name="coll"><geometry><box><size>{bin_w} {bin_d} {t}</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>{bin_w} {bin_d} {t}</size></box></geometry>
+          <material><diffuse>0.3 0.4 0.5 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="bin_wall_xp">
+      <static>true</static>
+      <pose>{wall_xp} 0 {wall_z} 0 0 0</pose>
+      <link name="link">
+        <collision name="coll"><geometry><box><size>{t} {bin_d} {bin_h}</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>{t} {bin_d} {bin_h}</size></box></geometry>
+          <material><diffuse>0.35 0.45 0.55 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="bin_wall_xn">
+      <static>true</static>
+      <pose>{wall_xn} 0 {wall_z} 0 0 0</pose>
+      <link name="link">
+        <collision name="coll"><geometry><box><size>{t} {bin_d} {bin_h}</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>{t} {bin_d} {bin_h}</size></box></geometry>
+          <material><diffuse>0.35 0.45 0.55 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="bin_wall_yp">
+      <static>true</static>
+      <pose>{cx} {wall_yp} {wall_z} 0 0 0</pose>
+      <link name="link">
+        <collision name="coll"><geometry><box><size>{inner_w} {t} {bin_h}</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>{inner_w} {t} {bin_h}</size></box></geometry>
+          <material><diffuse>0.35 0.45 0.55 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="bin_wall_yn">
+      <static>true</static>
+      <pose>{cx} {wall_yn} {wall_z} 0 0 0</pose>
+      <link name="link">
+        <collision name="coll"><geometry><box><size>{inner_w} {t} {bin_h}</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>{inner_w} {t} {bin_h}</size></box></geometry>
+          <material><diffuse>0.35 0.45 0.55 1</diffuse></material></visual>
+      </link>
+    </model>
+"""
+
+
 GRIPPER_TEMPLATE = """    <model name="gripper">
       <pose>{gx} {gy} {gz} 0 0 0</pose>
       <link name="base">
-        <inertial><mass>2.0</mass></inertial>
+        <!-- 龙门架重力补偿（2026-09-15 W2 终局）：dynamic 夹爪无指令即自由坠落，
+             0.3s 撞 bin 姿态歪斜且无姿态控制不可修复；link 级关重力=顶装龙门语义，
+             零速指令精确悬停（model 级 <gravity> 无效，实测）。零件重力照常。 -->
+        <gravity>0</gravity>
+        <inertial><mass>2.0</mass><inertia><ixx>7.5e-4</ixx><iyy>1.217e-3</iyy><izz>1.667e-3</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
         <collision name="coll"><geometry><box><size>0.08 0.06 0.03</size></box></geometry></collision>
         <visual name="vis"><geometry><box><size>0.08 0.06 0.03</size></box></geometry>
           <material><diffuse>0.2 0.2 0.25 1</diffuse></material></visual>
       </link>
       <link name="finger_left">
-        <pose>-{half_open} 0 -0.075 0 0 0</pose>
-        <inertial><mass>0.2</mass></inertial>
+        <gravity>0</gravity>
+        <pose>-{half_open} 0 {finger_pz} 0 0 0</pose>
+        <inertial><mass>0.2</mass><inertia><ixx>9.07e-6</ixx><iyy>4.83e-5</iyy><izz>4.41e-5</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
         <collision name="coll">
-          <geometry><box><size>0.05 0.012 0.12</size></box></geometry>
+          <geometry><box><size>0.05 0.012 {finger_len}</size></box></geometry>
           <surface><friction><ode><mu>3.0</mu><mu2>2.8</mu2></ode></friction></surface>
         </collision>
-        <visual name="vis"><geometry><box><size>0.05 0.012 0.12</size></box></geometry>
+        <visual name="vis"><geometry><box><size>0.05 0.012 {finger_len}</size></box></geometry>
           <material><diffuse>0.85 0.55 0.1 1</diffuse></material></visual>
+        <sensor name="contacts" type="contact">
+          <always_on>true</always_on>
+          <update_rate>100</update_rate>
+          <contact><collision>coll</collision><topic>/gripper/finger_left/contact</topic></contact>
+        </sensor>
       </link>
       <link name="finger_right">
-        <pose>{half_open} 0 -0.075 0 0 0</pose>
-        <inertial><mass>0.2</mass></inertial>
+        <gravity>0</gravity>
+        <pose>{half_open} 0 {finger_pz} 0 0 0</pose>
+        <inertial><mass>0.2</mass><inertia><ixx>9.07e-6</ixx><iyy>4.83e-5</iyy><izz>4.41e-5</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
         <collision name="coll">
-          <geometry><box><size>0.05 0.012 0.12</size></box></geometry>
+          <geometry><box><size>0.05 0.012 {finger_len}</size></box></geometry>
           <surface><friction><ode><mu>3.0</mu><mu2>2.8</mu2></ode></friction></surface>
         </collision>
-        <visual name="vis"><geometry><box><size>0.05 0.012 0.12</size></box></geometry>
+        <visual name="vis"><geometry><box><size>0.05 0.012 {finger_len}</size></box></geometry>
           <material><diffuse>0.85 0.55 0.1 1</diffuse></material></visual>
+        <sensor name="contacts" type="contact">
+          <always_on>true</always_on>
+          <update_rate>100</update_rate>
+          <contact><collision>coll</collision><topic>/gripper/finger_right/contact</topic></contact>
+        </sensor>
       </link>
       <joint name="finger_left_joint" type="prismatic">
         <parent>base</parent><child>finger_left</child>
@@ -144,10 +202,18 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     """场景束：SDF 文本 + 抓取序列元数据（目标零件/放置点/指间隙）。
 
     夹爪方案（2026-09-15 定型）：dynamic 两指 prismatic 关节夹爪——
-    整体升降走 VelocityControl（/model/gripper/vel_cmd，gz.msgs.Twist），
+    整体升降走 VelocityControl（/model/gripper/cmd_vel，gz.msgs.Twist），
     指开合走 JointPositionController（/model/gripper/finger_*_joint/cmd，gz.msgs.Double）。
     指面高摩擦挤压零件，提升靠摩擦夹持（DART 求解）；失败即真实失败，
     pick_success 由零件实际位姿判定，不预设。set_pose/pose_cmd 对本场景不生效（已实测排除）。
+
+    W2 终局修正（2026-09-15 碰撞单变量实验，deploy/sim/collision_probe.py）：
+    ① 所有 link 显式 <inertia>——缺省时 SDF 默认单位阵（比真实值大 ~4 个数量级），
+      DART LCP 病态致接触互踢弹跳（原"接触求解失效"假设被证伪，接触检测从未缺失）；
+    ② 空心料箱（原实心箱让零件生成在固体内部，深穿透弹射=warmup 弹飞根因）；
+    ③ 指间隙 +0.06 留 5mm 净空（原 +0.05 零间隙贴面）；
+    ④ 指面 contact sensor（/gripper/finger_*/contact）= collision_count 数据源
+      （gz-sim8 Contact system 只发布 contact sensor 话题，源码实证）。
     """
     import math
 
@@ -157,26 +223,51 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     bin_d = bin_.get("height_mm", 300) / 1000.0
     bin_h = 0.3
 
+    # 空心料箱（五面：底板 + 四壁）——W2 实心箱让零件生成在固体内部，
+    # DART 深穿透弹射是"warmup 零件弹飞 0.7m"根因之一
+    t = 0.02  # 板厚
+    wx = bin_w / 2 - t / 2
+    wy = bin_d / 2 - t / 2
+    wall_z = round(t + bin_h / 2, 4)
+    bin_sdf = BIN_TEMPLATE.format(
+        bin_w=round(bin_w, 3), bin_d=round(bin_d, 3), bin_h=bin_h, t=t,
+        wall_xp=round(0.5 + wx, 4), wall_xn=round(0.5 - wx, 4),
+        wall_yp=round(wy, 4), wall_yn=round(-wy, 4), wall_z=wall_z,
+        inner_w=round(bin_w - 2 * t, 3), cx=0.5)
+
     seed = (sim_ir.get("environment") or {}).get("seed", 42)
     overrides = (sim_ir.get("environment") or {}).get("overrides") or {}
     rng = random.Random(seed)
 
-    n_parts = 24
+    # 零件数可由 IR 覆盖：W2 里程碑=单件箱内抓取（物理验证）；密集堆抓取需
+    # 感知+规划（rgbd 相机已就位），归 V0.4——24 件盲抓实测会被闭合扰动压沉目标
+    n_parts = int(overrides.get("n_parts", 24))
     parts = []
     part_meta = []
     for i in range(n_parts):
         size_m = rng.uniform(0.02, 0.08) if "object_size_mm" not in overrides \
             else overrides["object_size_mm"] / 1000.0
-        x = round(0.5 + rng.uniform(-bin_w / 2 + 0.05, bin_w / 2 - 0.05), 4)
-        y = round(rng.uniform(-bin_d / 2 + 0.05, bin_d / 2 - 0.05), 4)
+        # 生成边距按夹爪足印预算：半开(size/2+0.05) + 指 x 半厚 0.025——
+        # 否则贴壁零件会让下降的指插进箱壁（W2 第 16 轮实测：指-壁重叠 19mm 卡死）
+        clear = size_m / 2 + 0.075
+        x = round(0.5 + rng.uniform(-(bin_w / 2 - t - clear), bin_w / 2 - t - clear), 4)
+        # y 向收紧到 ±0.03：抓取序列沿 y 侧向下刀需箱内偏位空间（|y|+0.05 偏位 ≤ 0.09）
+        y = round(rng.uniform(-0.03, 0.03), 4)
         z = round(0.05 + 0.12 * rng.random(), 4)
+        mass = round(rng.uniform(0.05, 0.8), 3)
+        s, sz_m = round(size_m, 4), round(size_m * 0.6, 4)
         parts.append(PART_TEMPLATE.format(
             idx=i, x=x, y=y, z=z,
-            roll=round(rng.uniform(-0.3, 0.3), 3),
-            pitch=round(rng.uniform(-0.3, 0.3), 3),
+            # 平放生成（roll=pitch=0，yaw 随机）：倾斜姿态的横向轮廓会超出指间隙
+            # （W2 第 17 轮实测：指落在倾斜零件肩部，差 2.4cm 不收敛）；
+            # 随机姿态/倾斜件抓取归 V0.4 感知规划
+            roll=0, pitch=0,
             yaw=round(rng.uniform(-3.14, 3.14), 3),
-            sx=round(size_m, 4), sy=round(size_m, 4), sz=round(size_m * 0.6, 4),
-            mass=round(rng.uniform(0.05, 0.8), 3),
+            sx=s, sy=s, sz=sz_m,
+            mass=mass,
+            ixx=f"{mass / 12 * (s * s + sz_m * sz_m):.3e}",
+            iyy=f"{mass / 12 * (s * s + sz_m * sz_m):.3e}",
+            izz=f"{mass / 6 * (s * s):.3e}",
             mu=overrides.get("friction_coeff", 0.5),
         ))
         part_meta.append({"idx": i, "x": x, "y": y, "z": z, "size_m": round(size_m, 4)})
@@ -185,20 +276,27 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     target = max(part_meta, key=lambda p: p["z"])
     place = {"x": 1.2, "y": 0.0, "z": 0.05}
 
-    # 夹爪初始：目标正上方 0.45m，指张开间隙 = 目标宽 + 0.05（关节行程 0.05 封口）
-    gap_open = target["size_m"] + 0.05
+    # 夹爪初始：目标正上方 0.45m，指间隙 = 目标宽 + 0.10（下降通道净空——
+    # W2 第 19 轮实测：DART 接触 margin ~5mm 内即生效，指贴零件顶角 2.6mm 就会
+    # 被接触力顶住无法下降；+0.10 让指离角点 2cm+，闭合时才侧向接触）
+    gap_open = target["size_m"] + 0.10
     gripper_z = 0.45
     half_open_v = round(gap_open / 2, 4)
+    # 指长 0.02（约零件半高）：抓上半侧——指底高于支撑面，不插箱底/不撞堆下层
+    # （W2 第 11 轮教训：指长 0.12 下降后指底穿透箱底板 z=-0.023，接触全为指-箱底互撞）
+    finger_len = 0.02
+    finger_pz = -0.03
     fingers = GRIPPER_TEMPLATE.format(
         gx=target["x"], gy=target["y"], gz=gripper_z,
-        half_open=half_open_v, lim=round(half_open_v - 0.001, 4))
+        half_open=half_open_v, lim=round(half_open_v - 0.001, 4),
+        finger_len=finger_len, finger_pz=finger_pz)
 
     sensor = (sim_ir.get("sensors") or [{}])[0]
     pose = sensor.get("pose") or {"x": 0.5, "y": 0.0, "z": 0.85, "pitch": 90, "yaw": 0}
     fov_deg = (sensor.get("params") or {}).get("fov_deg", 87)
 
     sdf = WORLD_TEMPLATE.format(
-        bin_w=round(bin_w, 3), bin_d=round(bin_d, 3), bin_h=bin_h,
+        bin=bin_sdf,
         parts="\n".join(parts),
         fingers=fingers,
         cam_x=pose.get("x", 0.5), cam_y=pose.get("y", 0.0), cam_z=pose.get("z", 0.85),
@@ -215,6 +313,10 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
         "place": place,
         "gripperStartZ": gripper_z,
         "halfOpen": round(gap_open / 2, 4),
+        # base z 与零件中心差 = base 半高 0.015 + margin 0.006 + 零件半高 0.3s：
+        # 指跨（base-0.04..base-0.02）对准零件上半侧面，base 底高于零件顶 margin 以上
+        "graspOffset": round(0.027 + 0.3 * target["size_m"], 4),
+        "partNames": [f"part_{m['idx']}" for m in part_meta],
         "gripJointPos": round(gap_open / 2 - half_grip, 4),  # 关节指令值（闭合）
     }
 
