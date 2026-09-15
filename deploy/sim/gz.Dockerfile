@@ -17,13 +17,16 @@ RUN gcc -x c++ -O2 -std=c++17 /tmp/gz_bridge.cc -o /usr/local/bin/gz-bridge \
     -lstdc++ $(pkg-config --cflags --libs gz-transport13) && rm /tmp/gz_bridge.cc
 
 WORKDIR /app
-ENV ROBOVERIFY_SCHEMA_DIR=/app/schemas \
+# 清华源 + 超时重试（2026-09-15 实测：无此配置时容器内 pip 直连 pypi 官方源
+# 6.5kB/s → Read timed out，build 反复失败；runtime/Dockerfile 同款配置）
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    ROBOVERIFY_SCHEMA_DIR=/app/schemas \
     ROBOVERIFY_DATABASE_URL=postgresql://roboverify:roboverify@postgres:5432/roboverify \
     PYTHONUNBUFFERED=1
 
 COPY runtime/pyproject.toml runtime/README.md ./
 COPY runtime/src ./src
-RUN pip3 install --no-cache-dir .
+RUN pip3 install --no-cache-dir --timeout 60 --retries 3 .
 COPY schemas /app/schemas
 
 # 仿真 worker：同一任务消费循环，gz 可执行文件在本镜像内可用
