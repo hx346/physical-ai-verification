@@ -139,7 +139,8 @@ echo "  校准版本已激活（DRAFT→ACTIVE；回滚=再激活旧版本）"
 # 前置：docker compose -f deploy/docker-compose.yml --profile sim up -d sim-worker
 log "8. gz-sim 仿真（可选：SIM=1 且 sim-worker 运行时执行，约 60s）"
 if [ "${SIM:-0}" = "1" ]; then
-  SIM_JSON="$(mktemp -d)/sim.json"
+  # 相对路径：Windows python 打不开 MSYS /tmp 映射路径（跨平台坑，2026-09-15）
+  SIM_JSON=".simreq-$$.json"
   "$PY" -c "
 import json, yaml, pathlib
 ir = yaml.safe_load(pathlib.Path('schemas/examples/simulation/bin-picking.yaml').read_text(encoding='utf-8'))

@@ -56,7 +56,14 @@
                style="border: 1px solid #f0f0f0; border-radius: 6px; padding: 8px; margin-bottom: 8px">
             <p style="margin: 0 0 4px">
               <a-tag color="purple">{{ ev.evidenceId }}</a-tag>
+              <a-tag v-if="ev.ir?.simulationVerdict"
+                     :color="simVerdictColor(ev.ir.simulationVerdict.status)">
+                {{ ev.ir.simulationVerdict.status }}
+              </a-tag>
               <span style="color: #888; font-size: 12px">{{ ev.ir?.adapter }} · {{ ev.createdAt }}</span>
+            </p>
+            <p v-if="ev.ir?.simulationVerdict" style="margin: 0 0 4px; font-size: 12px">
+              仿真判定：{{ ev.ir.simulationVerdict.detail ?? ev.ir.simulationVerdict.reason }}
             </p>
             <div v-for="(v, k) in ev.ir?.metrics ?? {}" :key="k" style="font-size: 12px">
               {{ k }}: {{ typeof v === 'number' ? v.toFixed(3) : v }}
@@ -198,5 +205,12 @@ function statusColor(status: Item['status']): string {
   if (status === 'PASS') return 'green'
   if (status === 'FAIL') return 'red'
   return 'orange'
+}
+
+// W3 仿真判定链：SIM_PASS/SIM_FAIL/SIM_UNKNOWN（provenance=simulation，与解析维度并列）
+function simVerdictColor(status: string): string {
+  if (status === 'SIM_PASS') return 'green'
+  if (status === 'SIM_FAIL') return 'red'
+  return 'default'
 }
 </script>

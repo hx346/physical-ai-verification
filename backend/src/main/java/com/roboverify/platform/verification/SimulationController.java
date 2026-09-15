@@ -133,6 +133,13 @@ public class SimulationController {
         evidenceIr.put("type", "simulation");
         if (!requirementKey.isEmpty()) {
             evidenceIr.putArray("requirementRefs").add(requirementKey);
+            // W3 仿真判定链：需求阈值 vs 仿真实测指标（系统判定，不来自任何 LLM；
+            // provenance=simulation，与解析/实测维度并列展示）。映射显式可审，
+            // 未映射/缺指标 → SIM_UNKNOWN（诚实降级，不猜）。
+            JsonNode verdict = judgeSimulation(projectId, requirementKey, result.path("metrics"));
+            if (verdict != null) {
+                evidenceIr.set("simulationVerdict", verdict);
+            }
         }
         evidenceIr.put("runRef", jobKey);
         evidenceIr.put("adapter", "gz-sim 8.10（headless ogre2）");
@@ -154,9 +161,86 @@ public class SimulationController {
         return out;
     }
 
+    /** 需求指标名 → 仿真指标名（显式映射，评审可审；语义对齐处手工维护）。 */
+    private static final Map<String, String> SIM_METRIC_ALIASES = Map.of(
+            "position_accuracy", "position_error_mm",
+            "picking_success_rate", "pick_success");
+
+    /**
+     * W3 仿真判定链：需求阈值（requirement.ir 的 metric/operator/value）vs 仿真实测指标。
+     * 系统判定，结论永不来自 LLM；映射未覆盖或指标缺失 → SIM_UNKNOWN（诚实降级）。
+     * 单次运行的 percentile 检验不适用——如实标注，不冒充 P95。
+     */
+    private JsonNode judgeSimulation(String projectId, String requirementKey, JsonNode metrics) {
+        JsonNode req;
+        try {
+            String irJson;
+            if (projectId != null && projectId.matches("[0-9a-fA-F-]{36}")) {
+                irJson = jdbcTemplate.queryForObject(
+                        "SELECT ir::text FROM requirement WHERE req_key=? AND project_id=?::uuid",
+                        String.class, requirementKey, projectId);
+            } else {
+                irJson = jdbcTemplate.queryForObject(
+                        "SELECT ir::text FROM requirement WHERE req_key=? ORDER BY created_at DESC LIMIT 1",
+                        String.class, requirementKey);
+            }
+            if (irJson == null) {
+                return null;
+            }
+            req = objectMapper.readTree(irJson);
+        } catch (Exception e) {
+            log.warn("simulation verdict skipped, requirement lookup failed: {}: {}", requirementKey, e.getMessage());
+            return null;
+        }
+
+        String reqMetric = req.path("metric").asText("");
+        String op = req.path("operator").asText("");
+        JsonNode valueNode = req.path("value");
+        double threshold = valueNode.asDouble(Double.NaN);
+        String simMetric = metrics.has(reqMetric) ? reqMetric
+                : SIM_METRIC_ALIASES.getOrDefault(reqMetric, "");
+
+        ObjectNode verdict = objectMapper.createObjectNode();
+        verdict.put("provenance", "simulation");
+        verdict.put("requirementKey", requirementKey);
+        verdict.put("requirementMetric", reqMetric);
+        verdict.put("operator", op);
+        verdict.set("threshold", valueNode);
+        verdict.put("unit", req.path("unit").asText(""));
+
+        if (simMetric.isEmpty() || !metrics.has(simMetric)) {
+            verdict.put("status", "SIM_UNKNOWN");
+            verdict.put("reason", "需求指标 [" + reqMetric + "] 无仿真指标映射（显式映射表未覆盖）");
+            return verdict;
+        }
+        if (op.isEmpty() || Double.isNaN(threshold)
+                || !List.of("<=", "<", ">=", ">", "==").contains(op)) {
+            verdict.put("status", "SIM_UNKNOWN");
+            verdict.put("reason", "需求缺有效 operator/value 阈值");
+            return verdict;
+        }
+
+        double observed = metrics.path(simMetric).asDouble();
+        boolean pass = switch (op) {
+            case "<=" -> observed <= threshold;
+            case "<" -> observed < threshold;
+            case ">=" -> observed >= threshold;
+            case ">" -> observed > threshold;
+            default -> Math.abs(observed - threshold) < 1e-9; // "=="
+        };
+        verdict.put("simMetric", simMetric);
+        verdict.put("observed", observed);
+        verdict.put("status", pass ? "SIM_PASS" : "SIM_FAIL");
+        verdict.put("detail", String.format("%s %s %s%s（实测 %s%s）；单次仿真运行，percentile 检验不适用",
+                simMetric, op, threshold, verdict.path("unit").asText(),
+                observed, verdict.path("unit").asText()));
+        log.info("simulation verdict: {} {} observed={} {} threshold={} {}",
+                requirementKey, pass ? "SIM_PASS" : "SIM_FAIL", observed, simMetric, threshold, op);
+        return verdict;
+    }
+
     /** scene.sdf / run.log → /sim-logs/{jobKey}/…，失败降级（artifacts 省略，证据主体仍落库）。 */
-    private ArrayNode archiveArtifacts(String jobKey, JsonNode result) {
-        ArrayNode artifacts = objectMapper.createArrayNode();
+    private ArrayNode archiveArtifacts(String jobKey, JsonNode result) {        ArrayNode artifacts = objectMapper.createArrayNode();
         putArtifact(artifacts, jobKey, "scene.sdf", result.path("sceneSdf").asText(""), "application/xml");
         putArtifact(artifacts, jobKey, "run.log", result.path("logExcerpt").asText(""), "text/plain");
         return artifacts;
@@ -167,7 +251,8 @@ public class SimulationController {
             return;
         }
         // jobKey 含 ":"（Windows 文件系统非法字符），对象 key 规范化替换
-        String key = "/sim-logs/" + jobKey.replace(":", "-") + "/" + filename;
+        // key 不带前导斜杠：LocalFs 视绝对路径为非法（2026-09-15 回归抓出），跨存储规范统一
+        String key = "sim-logs/" + jobKey.replace(":", "-") + "/" + filename;
         try {
             byte[] body = content.getBytes(StandardCharsets.UTF_8);
             objectStore.put(key, new ByteArrayInputStream(body), body.length, mediaType);

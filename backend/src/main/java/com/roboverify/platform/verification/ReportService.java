@@ -13,7 +13,7 @@ import java.util.Map;
 /**
  * Verification Report v1（Markdown）：可直接进入设计评审（产品方案 §25）。
  * 内容：系统概览 / 需求矩阵 / 逐项证据详情（贡献度+假设+provenance）/ 免责声明。
- * 首次下载时归档快照到对象存储（key: /reports/run-{id}/report.md）；
+ * 首次下载时归档快照到对象存储（key: reports/run-{id}/report.md）；
  * 归档失败仅告警不阻断下载（报告是核心交付物，存储是附加）。
  */
 @Service
@@ -37,7 +37,7 @@ public class ReportService {
     /** 渲染并归档首次快照（幂等：已存在则跳过）。 */
     public String renderAndArchive(String runId, String systemName) {
         String markdown = render(runId, systemName);
-        String key = "/reports/run-" + runId + "/report.md";
+        String key = "reports/run-" + runId + "/report.md";  // 无前导斜杠：LocalFs 拒绝绝对路径
         try {
             if (!objectStore.exists(key)) {
                 byte[] body = markdown.getBytes(StandardCharsets.UTF_8);

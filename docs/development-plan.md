@@ -242,6 +242,21 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 - W2 剩余疑点（收敛后）：指-零件接触物理本身——诊断观测到力驱动下指可穿越零件空间而零件不动，
   怀疑 DART 接触求解在该构型下失效（下一步：碰撞有效性单变量实验：零件置于两指间仅闭合力，
   观察是否被阻挡；必要时调 solver iterations/接触刚度/换 bullet 引擎对比）；collision_count 待接
+- 2026-09-15 **W3 进展（commit 见 git log）**：
+  - **gz-bridge 进程内 transport**（deploy/sim/gz_bridge.cc，gcc -x c++ 编入 sim 镜像）：
+    stdin 速度指令→cmd_vel 即时发布、位姿/接触话题→stdout 行协议；实测位姿 0.2s 就绪、
+    cmd→运动 ≤63ms——CLI one-shot 死区与位姿滞后根除。**pick_success=1.0 达成且 3/3
+    可复现**（E00189–E00191，指标离散 <0.5%）：双向 move 收敛（6mm）、对称闭合
+    （25317 接触）、夹起提升 z 0.0475→0.395、cycle 30.4s；position_error≈370mm
+    为放置释放真实测量（R003 判 SIM_FAIL 如实呈现）。
+  - **仿真判定链**：SimulationController 摄取时 requirement.ir（metric/operator/value）
+    vs 仿真实测指标 → evidence.ir.simulationVerdict（SIM_PASS/SIM_FAIL/SIM_UNKNOWN，
+    provenance=simulation）；需求指标→仿真指标显式映射表（position_accuracy→
+    position_error_mm 等，评审可审），未映射/缺阈值 → SIM_UNKNOWN 诚实降级；
+    单次运行 percentile 不适用如实标注。矩阵 Drawer 仿真证据块加判定徽标。
+  - 回归修复：对象 key 去前导斜杠（LocalFs 拒绝绝对路径，SeaweedFS 容忍——M2 未炸的
+    潜伏坑）；demo 第八幕 Windows 路径坑（mktemp MSYS 路径 Windows python 不可见→
+    相对路径）。demo 全八幕 SIM=1 回归通过。
 - 2026-09-15 **W2 终局（碰撞单变量实验 + 15 轮生产迭代，commit 3 项根因修复）**：
   - **"DART 接触失效"假设被证伪**：单变量实验（deploy/sim/collision_probe.py，零 g/
     静态 base/单零件/仅闭合力）显示接触检测与响应从未缺失（82 万接触条目、指停在零件面
@@ -269,9 +284,9 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 - [x] 四项 IR 请求指标 measured（单次仿真实测，数字自洽可追溯 evidence）
   （4/4：pick_success 真实测量为 0、collision_count 5648——失败被如实记录，
   正是验证系统的意义；运动传输精度为 W3 攻坚项，见 W2 终局记录）
-- [ ] 仿真结论参与矩阵（requirement 有阈值时可给 SIM_PASS/SIM_FAIL）
+- [x] 仿真结论参与矩阵（requirement 有阈值时可给 SIM_PASS/SIM_FAIL）
 - [ ] 批量仿真 ≥50 次跑通，敏感性排名与解析引擎方向一致（深度噪声主导类）
-- [ ] 全链路回归：demo 三幕 + 第八幕 + SeaweedFS 归档不回归
+- [x] 全链路回归：demo 三幕 + 第八幕 + 归档不回归
 
 ## 风险
 
