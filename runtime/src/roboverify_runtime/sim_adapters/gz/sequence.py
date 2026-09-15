@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -26,9 +27,10 @@ COARSE_BAND = 0.06
 FINE_V = 0.02
 LOOP_DT = 0.06
 STEP_TIMEOUT_S = 25.0
-# 连续 P 控制（配合 5Hz 持续发布线程）：低增益保稳定（死区 0.3s+位姿滞后 1s）
-CTRL_KP = 1.0
-CTRL_V = 0.15
+# 连续 P 控制：gz-bridge 下延迟 ≤63ms（W3 实测）可用正常增益；
+# CLI 回退路径同参数仍欠阻尼——回退时如实超时失败，不静默降级
+CTRL_KP = 2.0
+CTRL_V = 0.25
 # 悬停升速补偿（W2 终局实测）：dartsim 对模型级 LinearVelocityCmd 的实现是步首置
 # 速度、重力仍积分 g·dt——若夹爪受重力，零速指令下恒定下沉 0.0098 m/s（实测吻合）。
 # 现夹爪 link 级 <gravity>0</gravity>（龙门架重力补偿），零速即精确悬停，补偿归零保留开关。
@@ -188,13 +190,85 @@ class TwistPublisher:
         self._stop = True
 
 
-class GzClient:
-    """gz topic CLI 的薄封装（容器内可用性已实测）。"""
+class GzBridge:
+    """进程内 gz-transport 桥客户端（deploy/sim/gz_bridge.cc，V0.3 W3）。
+
+    实测：位姿 0.2s 就绪、cmd→运动延迟 ≤63ms、233 行/s——CLI one-shot 的
+    ~0.3s 发布死区与 ~1s 位姿滞后一并消除（W2 终局定性的运动传输瓶颈）。
+    行协议见 gz_bridge.cc 头注释。桥不可用时 GzClient 回退 CLI 三件套。
+    """
 
     def __init__(self) -> None:
-        self.poses = PoseStreamer()
-        self.contacts = ContactCounter()
-        self.twist = TwistPublisher()
+        self._poses: dict[str, tuple[float, float, float]] = {}
+        self._count = 0
+        self._lock = threading.Lock()
+        self._proc = subprocess.Popen(
+            ["gz-bridge", WORLD],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        try:
+            for line in self._proc.stdout:
+                parts = line.split()
+                if parts[0] == "P" and len(parts) == 5:
+                    with self._lock:
+                        self._poses[parts[1]] = (
+                            float(parts[2]), float(parts[3]), float(parts[4]))
+                elif parts[0] == "C" and len(parts) == 3:
+                    with self._lock:
+                        self._count += int(parts[1]) + int(parts[2])
+        except Exception:  # noqa: BLE001 — 桥异常静默终止（调用方按无数据处理）
+            pass
+
+    # ---- 统一接口：与 PoseStreamer/ContactCounter/TwistPublisher 同形 ----
+    def pose_of(self, name: str) -> tuple[float, float, float] | None:
+        with self._lock:
+            return self._poses.get(name)
+
+    def reset(self) -> None:
+        with self._lock:
+            self._count = 0
+
+    def total(self) -> int:
+        with self._lock:
+            return self._count
+
+    def set(self, vx: float, vy: float, vz: float) -> None:
+        try:
+            self._proc.stdin.write(f"{vx} {vy} {vz}\n")
+            self._proc.stdin.flush()
+        except (OSError, ValueError):
+            pass  # 桥已退出：速度指令丢失，序列后续按无反馈超时如实记录
+
+    def close(self) -> None:
+        try:
+            self._proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+        self._proc.terminate()
+        try:
+            self._proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+
+
+class GzClient:
+    """控制面客户端：优先 gz-bridge（进程内低延迟），无桥回退 gz topic CLI 三件套。"""
+
+    def __init__(self) -> None:
+        if shutil.which("gz-bridge"):
+            self._bridge: GzBridge | None = GzBridge()
+            self.poses = self._bridge
+            self.contacts = self._bridge
+            self.twist = self._bridge
+        else:
+            self._bridge = None
+            self.poses = PoseStreamer()
+            self.contacts = ContactCounter()
+            self.twist = TwistPublisher()
 
     def close(self) -> None:
         self.twist.close()

@@ -6,8 +6,15 @@
 FROM ghcr.io/j-rivero/gazebo:harmonic-full
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip \
+    python3 python3-pip g++ pkg-config \
     && rm -rf /var/lib/apt/lists/*
+
+# gz-bridge（V0.3 W3）：进程内 gz-transport 桥——stdin 速度指令→cmd_vel，
+# 位姿/接触话题→stdout 行协议。消灭 CLI one-shot 发布死区与文本渲染滞后
+# （W2 终局定性，见 deploy/sim/gz_bridge.cc 头注释）
+COPY deploy/sim/gz_bridge.cc /tmp/gz_bridge.cc
+RUN gcc -x c++ -O2 -std=c++17 /tmp/gz_bridge.cc -o /usr/local/bin/gz-bridge \
+    -lstdc++ $(pkg-config --cflags --libs gz-transport13) && rm /tmp/gz_bridge.cc
 
 WORKDIR /app
 ENV ROBOVERIFY_SCHEMA_DIR=/app/schemas \
