@@ -194,3 +194,52 @@
 - 主力：1 名全栈/架构（Java + Python + 前端）；M2 起需要 1 名 Robotics 工程师（gz/ROS 2/运动学）。
 - 本计划按"单人主力 + M2 起增加 1 人"排期；若持续单人，M2–M4 各延 2 周，总量约 26 周。
 - 里程碑日期为日历目标，非承诺；每周五对照 DoD 检查点复盘。
+---
+
+# 10. V0.3 — Simulation Verification（09-21 → 10-16，4 周）
+
+> 产品路线（方案 §44）：V0.1 Design Verification ✓（已超额含仿真/实验/真机 v0 骨架）→
+> **V0.3 Simulation Verification：仿真成为一等验证证据源**。
+> 前置已消除：gz 无头渲染/能力路由/证据落库/对象归档全链路已实测（2026-09-15）。
+
+## 目标
+
+仿真证据从"独立展示的物理统计"升级为"**能回答设计问题、参与需求判定**"：
+IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm 四项指标
+从 unavailable → measured（不编造原则）。
+
+## 任务拆解
+
+1. **W1 抓取序列 v0（简化垂直夹爪）**
+   1.1 探测：gz ScriptSystem（Lua）与 gz topic/service CLI 驱动能力（容器内实测）
+   1.2 scene_builder：加简化 kinematic 垂直夹爪（两指）+ 接触传感器（指尖）
+   1.3 抓取脚本：下降→闭爪→（attach 或几何接触判定）→提升→放置；仿真时钟计 cycle_time
+2. **W2 四项指标真实化**
+   - pick_success = 夹爪闭合时指尖与目标零件接触且质心偏差 < 指宽/2
+   - position_error_mm = 放置后零件位置 vs 目标点（仿真真值）
+   - collision_count = 接触传感器计数（非目标接触）
+   - cycle_time_s = 序列起止仿真时钟差
+   - 全部写入 SimResult.metrics；requestedMetrics 同步 measured
+3. **W3 仿真验证判定链**
+   - SimulationController 摄取时：若 requirementKey 有阈值（如 R003 ≤3mm），
+     生成"仿真 vs 需求"比对结论（SIM_PASS/SIM_FAIL，标注 provenance=simulation）
+   - verification_item 证据维度扩展：解析证据 + 仿真证据并列展示（矩阵 UI）
+4. **W4 批量仿真 + 假设验证**
+   - experiment 引擎支持 backend=simulator（LHS 采样 → N 次 headless gz → 聚合+Sobol）
+   - 验证 dev-plan 假设：单工作站 N 次 headless 耗时曲线（1000 次不现实则 50–100 次，
+     结果显式标注采样规模）
+
+## V0.3 DoD
+
+- [ ] 四项 IR 请求指标 measured（单次仿真实测，数字自洽可追溯 evidence）
+- [ ] 仿真结论参与矩阵（requirement 有阈值时可给 SIM_PASS/SIM_FAIL）
+- [ ] 批量仿真 ≥50 次跑通，敏感性排名与解析引擎方向一致（深度噪声主导类）
+- [ ] 全链路回归：demo 三幕 + 第八幕 + SeaweedFS 归档不回归
+
+## 风险
+
+| 风险 | 等级 | 缓解 |
+|---|---|---|
+| gz 内抓取脚本（attach/接触）复杂度超预期 | 中高 | 先几何接触判定（无 attach），attach 为增强；失败则指标降级为可测子集并如实标注 |
+| 仿真循环时间与 1000 次假设差距 | 中 | W4 实测后定采样规模，显式标注；并行容器留 V0.5 |
+| 仿真指标与解析内核结论矛盾 | 低 | 矛盾即价值（Real2Sim 起点），报告并列呈现不掩盖 |

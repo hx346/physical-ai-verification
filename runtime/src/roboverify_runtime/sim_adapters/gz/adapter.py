@@ -19,9 +19,12 @@ import tempfile
 import time
 from pathlib import Path
 
+from ...logging_setup import get_logger
 from ..base import SimResult
-from .scene_builder import build_world_sdf
+from .scene_builder import build_scene_bundle, build_world_sdf
+from .sequence import GzClient, run_pick_sequence
 
+log = get_logger("sim_adapters.gz")
 WORLD_NAME = "bin_picking"
 DEPTH_TOPIC = "/camera/rgbd/depth_image"
 WARMUP_S = 15.0
@@ -52,11 +55,19 @@ class GzSimAdapter:
             )
             try:
                 time.sleep(min(WARMUP_S, duration * 0.5))
-                remaining = max(2.0, duration - WARMUP_S)
-                time.sleep(remaining)
+                topics = self._capture(["gz", "topic", "-l"])
+                pick_metrics: dict[str, float] = {}
+                # scripted_pick：抓取序列（V0.3 W1）——bundle 按 seed 确定性重建
+                if (sim_ir.get("script") or {}).get("type") == "scripted_pick":
+                    try:
+                        bundle = build_scene_bundle(sim_ir)
+                        pick_metrics = run_pick_sequence(GzClient(), bundle, log)
+                        log.info("pick sequence done", **pick_metrics)
+                    except Exception as e:  # noqa: BLE001 — 序列失败不吞，如实记录
+                        pick_metrics = {"pick_sequence_error": 1.0}
+                        log.error("pick sequence failed", error=str(e), exc_info=True)
                 stats = self._capture(["gz", "topic", "-e", "-t",
                                        f"/world/{WORLD_NAME}/stats", "-n", "1"])
-                topics = self._capture(["gz", "topic", "-l"])
             finally:
                 server.terminate()
                 try:
@@ -68,9 +79,12 @@ class GzSimAdapter:
             metrics = self.extract_metrics(stats)
             metrics["models_in_scene"] = float(scene_content.count("<model "))
             metrics["depth_camera_active"] = 1.0 if DEPTH_TOPIC in topics else 0.0
+            metrics.update(pick_metrics)
             notes = [f"gz-sim headless server 运行 {duration:.0f}s 后采样（stats/话题实测）"]
             if metrics["depth_camera_active"] < 1.0:
                 notes.append("警告：depth_image 话题未出现，相机传感器未激活（检查 Sensors 系统插件）")
+            if "pick_sequence_error" in metrics:
+                notes.append("警告：抓取序列执行异常（详见 logExcerpt），指标缺失不编造")
             return SimResult(
                 metrics=metrics,
                 log_excerpt=(server_out or "")[-4000:],
