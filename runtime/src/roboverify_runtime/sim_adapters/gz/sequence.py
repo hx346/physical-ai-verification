@@ -404,6 +404,9 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
         client.pub_grip(force * frac)
         time.sleep(0.7)
     time.sleep(1.0)
+    # 注：保持力降档（60→15N 减接触储能）实测两难——弹飞仅部分缓解且降档扰动
+    # 令部分零件脱夹（pick_success 回归）。全程保持抓取力，弹飞残余归 V0.4
+    # （位置控制夹持 / SDF 软接触参数——DART 力控+突释的数值特性）。
     # 4) 提升
     _move_to(client, (live[0], live[1], start_z))
     time.sleep(0.5)
@@ -412,11 +415,27 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
     collision_count = client.contacts.total()
     log.info("pick check", lifted_z=part_lifted, threshold=target_z_lift, picked=picked,
              collision_count=collision_count)
-    # 5) 平移到放置点上方 → 下降 → 张开 → 回 home
+    # 5) 平移到放置点上方 → 低释放 → 缓脱张开 → 回 home
+    # W4 放置优化（轨迹诊断定位两段根因）：①原释放高度零件底悬空 ~35mm 自由落体
+    # 弹跳；②-15N 瞬时张爪时指面摩擦把零件沿 x 弹飞 376mm（E00189-91 实测
+    # ~370mm 的真因，非"落体弹跳"）。修复：零件底 ~2mm 干涉触地（地面支撑）
+    # + 小力渐进脱接触（-1.5/-3/-6N 缓脱后指已离零件，才 -15N 全开）。
+    part_half_h = 0.3 * float(target.get("size_m") or 0.04)
+    release_z = round(part_half_h + 0.002 + grasp_offset, 4)
     _move_to(client, (place["x"], place["y"], start_z))
-    _move_to(client, (place["x"], place["y"], place["z"] + grasp_offset))
-    client.pub_grip(-15.0)  # 负力张开（力控双向）
-    time.sleep(1.0)
+    _move_to(client, (place["x"], place["y"], release_z))
+    # 泄压（0.1s 级轨迹诊断实锤的第三段根因）：闭合 60N 持续压在接触内积累
+    # penetration 势能，任何开力（哪怕 -1.5N）松指瞬间 DART 将其弹出 2.4m/s
+    # （0.1s 内位移 236mm，零件已触地仍被弹飞）。先发零力让势能对称缓慢释放
+    # （零件由地面支撑+指对称轻接触稳定），再小力渐进张开。
+    client.pub_grip(0.0)
+    time.sleep(1.2)
+    for f in (-1.5, -3.0, -6.0):
+        client.pub_grip(f)
+        time.sleep(0.5)
+    time.sleep(0.5)  # 缓脱后零件已由地面支撑、指-零件接触分离
+    client.pub_grip(-15.0)
+    time.sleep(0.8)
     client.pub_grip(0.0)
     _move_to(client, (place["x"], place["y"], start_z))
     t1 = client.sim_time()
