@@ -334,6 +334,10 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
     grip_pos = bundle["gripJointPos"]
     start_z = bundle.get("gripperStartZ", 0.45)
     grasp_offset = bundle.get("graspOffset", 0.033)
+    # W4 批量实验：感知定位误差注入（per-run 采样的固定实例）。控制器目标 =
+    # 零件真值 + 噪声（模拟视觉定位误差）；pick_success/position_error 判定
+    # 仍用零件真实位姿——失败是真实物理失败，不预设结果。
+    nx, ny, nz = bundle.get("graspNoise", (0.0, 0.0, 0.0))
 
     # 位姿流就绪等待（订阅握手）
     for _ in range(30):
@@ -358,19 +362,39 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
 
     # 1) 回 home（xy 取零件实时位置——warmup 期间可能已被扰动；z 回安全高度）
     live = client.pose_of(tgt_name) or part0
-    _move_to(client, (live[0], live[1], start_z))
+    _move_to(client, (live[0] + nx, live[1] + ny, start_z))
     # 2) 侧向下刀沿 y 轴（W2 第 24 轮定型）：指开合沿 x——沿 y 贴身滑入零件侧带时
     #    x 向间隙仍在，指不碰零件任何面 → 平移精确居中 → 对称力闭合。
     #    （沿 x approach 会被开口侧指面顶住停在差 clearance 处→偏斜抓取→挤飞；
     #      沿 z 下插会被顶面接触顶住停在指底=零件顶面。）
     live2 = client.pose_of(tgt_name) or live
-    grasp_z = live2[2] + grasp_offset
+    grasp_z = live2[2] + grasp_offset + nz
     offs_y = (1.0 if live2[1] >= 0 else -1.0) * min(LATERAL_OFFS, 0.09 - abs(live2[1]))
-    lateral_ok = _move_to(client, (live2[0], live2[1] + offs_y, grasp_z))
-    approach_ok = _move_to(client, (live2[0], live2[1], grasp_z))
+    lateral_ok = _move_to(client, (live2[0] + nx, live2[1] + ny + offs_y, grasp_z))
+    approach_ok = _move_to(client, (live2[0] + nx, live2[1] + ny, grasp_z))
     log.info("descend done", lateral_ok=lateral_ok, approach_ok=approach_ok,
              gripper=client.pose_of("gripper"), part=live2,
              target_grasp_z=round(grasp_z, 4), lateral_y=round(offs_y, 4))
+    if not (lateral_ok and approach_ok):
+        # 下刀未到位（定位误差过大被零件顶住等）：真实失败，快速收尾——
+        # 跳过闭合/提升/放置（真实机器人也不会闭爪），回 home 结束 cycle。
+        # 否则后续每步各吃 25s 超时，失败 run wall 从 ~60s 拖到 ~196s（W4 实测）。
+        client.contacts.reset()
+        _move_to(client, (live[0], live[1], start_z))
+        t1 = client.sim_time()
+        final = client.pose_of(tgt_name)
+        metrics = {
+            "pick_success": 0.0,
+            "cycle_time_s": round(max(0.0, t1 - t0), 3) if t0 >= 0 and t1 >= 0 else -1.0,
+            "collision_count": 0.0,
+            "descend_failed": 1.0,
+        }
+        if final is not None:
+            metrics["position_error_mm"] = round(
+                1000.0 * ((final[0] - place["x"]) ** 2 + (final[1] - place["y"]) ** 2) ** 0.5, 3)
+            metrics["placed_height_m"] = round(final[2], 4)
+        log.info("descend failed, fast-finish cycle", part=live2)
+        return metrics
     # 3) 力控渐进夹紧：use_force_commands=true 时 cmd 是力值（N）——
     #    W1-W2 曾误发位置值 0.027 当力（≈0.027N 零力，滑脱根因）。力来自 IR grasp_force_n。
     time.sleep(0.6)

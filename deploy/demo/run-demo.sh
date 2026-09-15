@@ -176,5 +176,34 @@ else
   echo "  跳过（SIM=1 且启动 sim-worker 后执行：docker compose --profile sim up -d sim-worker）"
 fi
 
-log "Demo 全部完成 ✓（三幕 + 位姿对照 + Real2Sim 闭环 + 可选仿真幕）"
+# 第九幕（可选，需 sim-worker）：批量仿真实验（W4）——LHS 采样 → N 次 headless gz
+# → 聚合 + SRC 敏感性。n=50 约 1h（单次 ~60s wall），n 可用 SIM_EXP_N 覆盖。
+log "9. 批量仿真实验（可选：SIM_EXP=1 且 sim-worker 运行时执行，n=50 约 1h）"
+if [ "${SIM_EXP:-0}" = "1" ]; then
+  N="${SIM_EXP_N:-50}"
+  EXP_JOB=$(post "/api/experiments" "{\"projectId\":\"$PROJECT\",\"systemConfigId\":\"$SYS_RGBD\",\"backend\":\"simulator\",\"n\":$N}" | jq_get "d['data']['jobKey']")
+  echo "  jobKey=$EXP_JOB（n=$N，每 run ~60s wall，轮询间隔 60s）…"
+  for i in $(seq 1 180); do
+    EXP_OUT=$(curl -s "$BASE/api/experiments/$EXP_JOB" -H "$AUTH")
+    EXP_STATUS=$(echo "$EXP_OUT" | jq_get "d['data']['status']")
+    [ "$EXP_STATUS" = "SUCCEEDED" ] && break
+    [ "$EXP_STATUS" = "FAILED" ] && { echo "  实验任务失败"; break; }
+    sleep 60
+  done
+  echo "$EXP_OUT" | "$PY" -c "
+import sys, json
+d = json.load(sys.stdin)['data']
+print('  状态:', d['status'], ' evidenceId:', d.get('evidenceId'))
+a = (d.get('result') or {}).get('aggregates') or {}
+print('  聚合:', json.dumps({k: a.get(k) for k in
+      ('samples','completed','failed','pick_success_rate',
+       'pick_success_rate_ci95_wilson','wall_per_run_s_mean','wall_total_s')}, ensure_ascii=False))
+r = d.get('result') or {}
+print('  敏感性 top3 (pick_success):', [(s['name'], s['share']) for s in r.get('sensitivity', [])[:3]])
+"
+else
+  echo "  跳过（SIM_EXP=1 且启动 sim-worker 后执行；n 用 SIM_EXP_N 覆盖，默认 50）"
+fi
+
+log "Demo 全部完成 ✓（三幕 + 位姿对照 + Real2Sim 闭环 + 可选仿真/批量实验幕）"
 rm -f "$TMPJSON"

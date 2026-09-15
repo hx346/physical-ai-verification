@@ -306,7 +306,10 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     )
     half_grip = (target["size_m"] - 0.002) / 2.0  # 闭合半间隙：1mm 挤压量
     grasp_force_n = float(((sim_ir.get("script") or {}).get("params") or {}).get("grasp_force_n", 40))
+    # W4 实验引擎：感知定位误差实例（per-run 采样后经 overrides 传入；默认零噪声）
+    noise_xyz = overrides.get("graspNoiseXYZ") or (0.0, 0.0, 0.0)
     return {
+        "graspNoise": (float(noise_xyz[0]), float(noise_xyz[1]), float(noise_xyz[2])),
         "graspForceN": grasp_force_n,
         "sdf": sdf,
         "target": {"name": f"part_{target['idx']}", **{k: target[k] for k in ("x", "y", "z", "size_m")}},

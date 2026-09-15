@@ -257,6 +257,32 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
   - 回归修复：对象 key 去前导斜杠（LocalFs 拒绝绝对路径，SeaweedFS 容忍——M2 未炸的
     潜伏坑）；demo 第八幕 Windows 路径坑（mktemp MSYS 路径 Windows python 不可见→
     相对路径）。demo 全八幕 SIM=1 回归通过。
+- 2026-09-15 **W4 完成（批量仿真 + 敏感性，V0.3 全 DoD 达成）**：
+  - **experiment 引擎支持 backend=simulator**：`POST /api/experiments {backend:
+    simulator}` → LHS 采样 → N 次 headless gz（单件箱模板，每 run 独立场景 seed）
+    → 聚合 + SRC 敏感性（runtime/experiment/sim_backend.py）。参数映射显式可审：
+    depth_noise_mm→抓取目标 N(0,σ) 三轴定位噪声（感知误差模拟，判定仍用真值）、
+    object_size_mm/friction_coeff→场景 overrides；illumination/occlusion/latency
+    未映射（脚本抓取无感知链，assumptions 如实声明，其 SRC share 属采样噪声非物理）。
+    敏感性方法学：Saltelli-Sobol 需 N×(2k+2) 次仿真求值（6 参数 base 256 → 3584 次
+    ≈60h）单工作站不可行 → LHS 样本上 SRC（Pearson r²），样本量与 R² 随结果标注。
+  - **50-run 实测（E00220）**：50/50 完成、pick_success_rate=0.64（Wilson CI
+    [0.50,0.76]）、每 run 59.8s wall、总 49.8min；**敏感性 depth_noise 双目标
+    （pick_success/position_error）均排第一**，与解析引擎"深度噪声属主导贡献类"
+    方向一致（解析 top3=object_size/friction/depth_noise）。仿真同时揭示解析
+    logistic 的 object_size 权重偏差（仿真端 size≈0：单件自定心与尺寸弱相关）——
+    模型边界信号，报告并列呈现不掩盖。耗时假设验证：1000 次 ≈16.6h，"1000 次
+    ≤6h" 不成立 → 50-100 次为单工作站合理规模（显式标注采样规模）。
+  - **参数范围探测先行**（避免整批无信号）：σ=0/20/40 三点探测——翻转点在
+    (0,20)，定 [0,15]；σ=20 的 4σ 偏移实例下刀被顶卡死。顺手优化：下刀未到位
+    快速收尾（跳过闭合/放置，失败 run wall 196s→~60s）。
+  - **worker 心跳实装**（架构 §6 承诺但 runner 从未调用——claim 只设一次
+    timeout_at，>5min 任务必被 recover 误回收重跑）：handler 运行期间后台线程
+    每 60s 独立连接续期。首版踩坑：函数未 import（NameError 静默吞进 except，
+    py_compile 查不出）——手动续期止血 + n=5 验证批确认续期生效
+    （timeout_at 随 locked_at+60s 推进）。
+  - demo 第九幕（SIM_EXP=1 门控，默认跳过）；八幕回归全绿（pick_success=1.0
+    复现、归档正常）。
 - 2026-09-15 **W2 终局（碰撞单变量实验 + 15 轮生产迭代，commit 3 项根因修复）**：
   - **"DART 接触失效"假设被证伪**：单变量实验（deploy/sim/collision_probe.py，零 g/
     静态 base/单零件/仅闭合力）显示接触检测与响应从未缺失（82 万接触条目、指停在零件面
@@ -279,13 +305,13 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
     但短距比例控制仍振荡——**需进程内 gz-transport 节点（W3 事项）**。pick_success 保持 0
     是 15 轮真实结果，证据链完整；抓取物理本身已被单变量实验+生产接触流双重证明。
 
-## V0.3 DoD
+## V0.3 DoD ✅（2026-09-15 全部达成）
 
 - [x] 四项 IR 请求指标 measured（单次仿真实测，数字自洽可追溯 evidence）
   （4/4：pick_success 真实测量为 0、collision_count 5648——失败被如实记录，
   正是验证系统的意义；运动传输精度为 W3 攻坚项，见 W2 终局记录）
 - [x] 仿真结论参与矩阵（requirement 有阈值时可给 SIM_PASS/SIM_FAIL）
-- [ ] 批量仿真 ≥50 次跑通，敏感性排名与解析引擎方向一致（深度噪声主导类）
+- [x] 批量仿真 ≥50 次跑通，敏感性排名与解析引擎方向一致（深度噪声主导类）
 - [x] 全链路回归：demo 三幕 + 第八幕 + 归档不回归
 
 ## 风险
