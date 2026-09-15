@@ -150,7 +150,9 @@
 - [x] 遥测导入 → Gap 报告生成（CSV 链路已验证；演示用 synthetic 数据并显式标注"非真机"）
 - [x] 校准流程走通 DRAFT→ACTIVE（版本状态机 + 激活即回滚；历史证据仍指向生成时版本——版本隔离验证）
 - [x] 全链路 Demo（三幕 + Real2Sim 闭环）一键复现（deploy/demo/run-demo.sh）
-- [ ] ROS 2 只读采集器接入真机/bag（代码位预留：realtest CSV 即其导出格式；需 ROS 环境）
+- [ ] ROS 2 只读采集器接入真机/bag（v0 骨架已写：deploy/ros2/collect_telemetry.py，
+      零发布器 + CSV 与 /api/realtest/sessions 逐字节兼容 + --self-test 纯函数自验通过；
+      **未在真 ROS 2 环境运行过**，待真机联调）
 
 ---
 
@@ -283,6 +285,21 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
     （timeout_at 随 locked_at+60s 推进）。
   - demo 第九幕（SIM_EXP=1 门控，默认跳过）；八幕回归全绿（pick_success=1.0
     复现、归档正常）。
+- 2026-09-15 **收尾三项（commits 1f4ffc7 / 801b8ce）**：
+  - **放置释放优化**（0.1s 轨迹诊断三段根因）：①释放高度零件底悬空 ~35mm+
+    -15N 瞬时张开→落体弹跳；②指-零件 60N 挤压接触储能——任何开力（含零力
+    撤压，泄压实验证伪）松指瞬间 DART 弹射 2.4m/s（0.1s 位移 236mm，零件已
+    触地仍被弹飞）；③保持力降档（60→15N 减储能）两难被否决——弹飞仅部分
+    缓解且降档扰动致零件脱夹（pick_success 回归）。终版：低释放（零件底
+    ~2mm 触地干涉）+泄压 1.2s+渐进张开，4 seeds 实测 pick 4/4、稳定释放场景
+    position_error 5.9-36mm（原全场景 ≥370mm）；重零件弹射残余如实保留
+    （DART 力控+突释数值特性），根治（位置控制夹持/SDF 软接触参数）归 V0.4。
+  - **ROS 2 只读采集器 v0**（deploy/ros2/）：零发布器（grep 审计 0）、
+    task_result JSON→KNOWN_METRICS CSV（与导入端点逐字节兼容）、行缓冲
+    kill-safe、--self-test 纯函数自验通过；诚实标注未在真 ROS 运行，待联调。
+  - **87 同步**：本地侧就绪（5 自建镜像 build+导出 E:\rv-deploy-87\
+    roboverify-images-w4.tar.gz，1.1GB）；执行时 87 离线（ping 100% 丢包、
+    ssh 超时×3），远端步骤待服务器恢复后执行（scp→load→up，禁 pull/build）。
 - 2026-09-15 **W2 终局（碰撞单变量实验 + 15 轮生产迭代，commit 3 项根因修复）**：
   - **"DART 接触失效"假设被证伪**：单变量实验（deploy/sim/collision_probe.py，零 g/
     静态 base/单零件/仅闭合力）显示接触检测与响应从未缺失（82 万接触条目、指停在零件面
