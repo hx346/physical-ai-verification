@@ -1,10 +1,9 @@
 name: ci
 
+# CI 已关闭（2026-09-15 用户决策：本地构建+离线传输，不用 GitHub 构建/CI-CD）。
+# 恢复：把触发器改回 push/pull_request 即可。
 on:
-  push:
-    branches: [main, "feat/**"]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   schemas:
