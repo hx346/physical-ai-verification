@@ -7,6 +7,7 @@
 
 ### Added
 
+- **V0.5 W3 感知定位抓取 v0（2026-09-16）**：独立感知模块（深度图→顶视反投影→工作空间窗质心，噪声两层诚实模型：帧偏置主导+逐像素 iid 次要）；gz_bridge D 命令单帧深度落盘；序列感知路径（控制目标不读真值、standby 避遮挡、perception_error_mm 入指标/evidence 聚合）；实验 depth_noise → 感知链真实噪声（per-run 可复现）。实测：σ=0 感知误差 1.065mm、感知闭环 pick=1.0（E00280 n=6）；诚实结论——真实链下 depth_noise 杠杆臂 ~5-13%（顶视+质心平均），远低于解析 1:1 映射假设（注入 0.60 vs 真实链 0.83）；工作空间窗两处容器实测修正（壁面透视泄入/底板顶面边界）
 - **V0.5 W2 对照实验平台化（2026-09-16）**：`POST /api/experiments/comparisons`（同参数同 seed × 2-5 臂配对采样，差异归因系统配置）→ 全臂完成自动摄取 evidence（type=comparison，Flyway V7：experiment_comparison 表 + evidence 类型扩展）；对照载荷逐指标并列（解析/仿真口径统一）+ 相对基准差值与更优判定 + 假设清单（仿真臂模板不随系统配置变化如实标注）；报告 v2 新增 System Configuration Comparison 章节；GET /api/experiments/batches 批次列表（含进行中进度）；前端实验页重构为批次/对照双 Tab（发起/列表/进度/下钻）；demo 5.5 幕 CMP=1 门控（三臂对照 E00279）
 - **V0.5 W1 批次编排 DAG 化（2026-09-16）**：experiment backend=simulator 展开为两级 DAG——
   父任务（requires=orchestrator，普通 worker）LHS 采样 → N 个 simulation 子 job

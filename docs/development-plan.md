@@ -353,7 +353,13 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 - [x] 对照实验：同一实验两组相机配置对照，报告并列呈现（demo 第二幕平台化）
   **（2026-09-16 达成：POST /api/experiments/comparisons 2 臂 API 实测 E00256 + demo 5.5
   三臂 E00279 + 报告 System Configuration Comparison 章节 + 前端批次/对照双 Tab 页）**
-- [ ] 感知抓取：深度定位误差实测入 evidence；depth_noise 敏感性来自真实感知链
+- [x] 感知抓取：深度定位误差实测入 evidence；depth_noise 敏感性来自真实感知链
+  **（2026-09-16 达成：感知模块独立（perception/depth_localize.py 顶视反投影+工作空间窗
+  质心）+ gz_bridge D 命令单帧深度落盘 + 序列感知路径（控制目标不读真值，standby 避遮挡，
+  真值仅判定）。实测 E00280 n=6：σ=0 感知误差 1.065mm、感知闭环 pick_success=1.0、
+  perception_error_mm mean/P95 入 evidence aggregates；诚实结论：真实链下 depth_noise
+  杠杆臂仅 ~5-13%（顶视+质心平均+抓取容差），敏感性 share 让位 friction/object_size
+  ——解析 1:1 映射的高估被暴露（W4 注入 0.60 vs W3 真实链 0.83））**
 - [ ] 回归：demo 全幕 + 单次仿真 + 批量实验不回归；87 同步完成
 
 ## 风险
@@ -366,6 +372,17 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 | 感知链与脚本序列耦合过深 | 中 | 定位模块独立（输入深度图 → 输出位姿假设），序列只消费接口 |
 
 ## V0.5 进展记录
+
+- 2026-09-16 **W3 感知定位抓取 v0 完成**：深度图 → 反投影质心 → 控制目标（替代真值+
+  注入噪声）；噪声两层模型（帧偏置 N(0,σ) 主导——ToF/结构光单帧估计特性，逐像素 iid
+  σ/10 被质心 √N 平均）；真值仅用于判定（pick_success/position_error/perception_error）。
+  **容器实测三连坑**（工作空间窗两次修正）：①顶视透视下箱壁内立面投影泄入窗内（32k 壁面
+  点 vs 零件 ~300 点，质心拉偏 180mm）→ XY 内缩板厚+40mm（零件生成保证离壁 ≥75mm）；
+  ②箱底板顶面 z=0.03 恰在 z_min 边界（6k 底面点泄入）→ z_min=0.036（最小零件顶面 0.042，
+  6mm 保护带）；③提升段引用旧 live 变量 NameError（感知分支重构遗漏，py_compile 查不出
+  运行期 NameError）。感知仿真：σ=0 误差 1.065mm（坐标约定对真值校验通过）、感知驱动
+  下降-夹持-放置全闭环 pick=1.0、cycle 47-49s（standby+look 开销 ~15s）。
+  噪声生效性：帧偏置实测抽值（σ=10.4→bias+14.1mm 等）与感知误差传播一致。
 
 - 2026-09-16 **W2 对照实验平台化完成**：ExperimentLaunchService 抽取共享投递（同 seed 配对
   采样）；ComparisonController（创建/查询/列表，全臂完成自动摄取 evidence type=comparison）；
