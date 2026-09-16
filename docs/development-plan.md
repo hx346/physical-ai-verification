@@ -150,9 +150,10 @@
 - [x] 遥测导入 → Gap 报告生成（CSV 链路已验证；演示用 synthetic 数据并显式标注"非真机"）
 - [x] 校准流程走通 DRAFT→ACTIVE（版本状态机 + 激活即回滚；历史证据仍指向生成时版本——版本隔离验证）
 - [x] 全链路 Demo（三幕 + Real2Sim 闭环）一键复现（deploy/demo/run-demo.sh）
-- [ ] ROS 2 只读采集器接入真机/bag（v0 骨架已写：deploy/ros2/collect_telemetry.py，
-      零发布器 + CSV 与 /api/realtest/sessions 逐字节兼容 + --self-test 纯函数自验通过；
-      **未在真 ROS 2 环境运行过**，待真机联调）
+- [ ] ROS 2 只读采集器接入真机/bag（v0 骨架：deploy/ros2/collect_telemetry.py，零发布器 +
+      CSV 与 /api/realtest/sessions 逐字节兼容；**2026-09-16 真实 ROS 2 humble 容器联调通过**
+      （8/8 消息收齐、边界语义正确、SIGINT 二次 shutdown RCLError 已修、DDS 发现期首条
+      丢失边界已标注，冒烟 harness smoke_talker.py 入库）；真机话题名/消息格式联调仍待）
 
 ---
 
