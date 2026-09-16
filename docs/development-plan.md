@@ -343,8 +343,12 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 
 ## V0.5 DoD
 
-- [ ] 并行编排：3+ sim-worker 下 50-run 批次 wall ≤ 20min（单机 50min 基线）
-- [ ] 断点续跑：批次中断后重启，已完成 run 不重跑（验证：复用计数 = 已完成数）
+- [x] 并行编排：3+ sim-worker 下 50-run 批次 wall ≤ 20min（单机 50min 基线）
+  **（2026-09-16 达成：4 sim-worker 50-run wall 922.8s=15.4min，E00255；3 worker 实测
+  20.4min 差 24s 未达——16C/22T 开发机上 4 worker 无 RTF 退化，单 run wall 均值 72s）**
+- [x] 断点续跑：批次中断后重启，已完成 run 不重跑（验证：复用计数 = 已完成数）
+  **（2026-09-16 达成：父任务容器中断→recover 重入队→重跑 reusedRuns=6/6 零重跑，
+  纯收割 wall 0.1s，E00253；sim-worker 中断场景子 job 亦复用，未完成 run 重跑）**
 - [ ] 对照实验：同一实验两组相机配置对照，报告并列呈现（demo 第二幕平台化）
 - [ ] 感知抓取：深度定位误差实测入 evidence；depth_noise 敏感性来自真实感知链
 - [ ] 回归：demo 全幕 + 单次仿真 + 批量实验不回归；87 同步完成
@@ -417,3 +421,13 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 | gz 内抓取脚本（attach/接触）复杂度超预期 | 中高 | 先几何接触判定（无 attach），attach 为增强；失败则指标降级为可测子集并如实标注 |
 | 仿真循环时间与 1000 次假设差距 | 中 | W4 实测后定采样规模，显式标注；并行容器留 V0.5 |
 | 仿真指标与解析内核结论矛盾 | 低 | 矛盾即价值（Real2Sim 起点），报告并列呈现不掩盖 |
+
+- 2026-09-16 **W1 DoD 前两项达成（4-worker 50-run 实测）**：
+  - **吞吐**：4 sim-worker × n=50 wall 922.8s=15.4min（DoD ≤20min ✓，串行基线 50min，
+    加速 3.3×；3 worker 实测 20.4min 差 24s——4 worker 无退化，单 run wall 均值 72s）。
+    E00255：50/50、rate 0.62 Wilson[0.48,0.74]、depth_noise 敏感性第一。
+  - **诚实记录：gz 非位级确定**——同 seed 两次 50-run rate 0.60/0.62（边界 run 翻转；
+    采样矩阵与噪声实例逐位一致由单测锁定，差异来自物理求解浮点/调度，与 W3"离散<0.5%"
+    观察一致）。
+  - 4-worker 批次 run wall max 159.8s（均值 72s）——负载竞争下个别 run RTF 退化，
+    批次不受影响（兜底时限语义保护）。

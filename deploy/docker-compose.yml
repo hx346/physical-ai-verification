@@ -69,7 +69,8 @@ services:
 
   # 实验引擎 worker：同一镜像，跑任务消费循环（SKIP LOCKED）
   # capabilities=orchestrator：V0.5 W1 DAG 父任务（experiment backend=simulator 编排）
-  # 必须由本 worker 认领——sim-worker 若认领会占住唯一 gz 槽等子任务，自我饿死
+  # 必须由本 worker 认领——sim-worker 若认领会占住唯一 gz 槽等子任务，自我饿死。
+  # 多批次并发编排：docker compose up -d --scale worker=N（SKIP LOCKED 抢占）
   worker:
     build:
       context: ..
