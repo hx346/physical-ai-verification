@@ -88,7 +88,9 @@ public class ExperimentLaunchService {
         return jobKey;
     }
 
-    /** 仿真实验的单次运行模板：单件箱内抓取（定位噪声→抓取成败的机制最干净）。 */
+    /** 仿真实验的单次运行模板：单件箱内抓取 + 感知闭环（V0.5 W3）。
+     *  相机顶视（IR pose pitch=0 → SDF cam_pitch_rad=+90°，光轴 -Z）——感知 v0
+     *  反投影几何按此约定，非顶视配置在 scene_builder fail-fast。 */
     private ObjectNode buildSimulationTemplate() {
         ObjectNode sim = objectMapper.createObjectNode();
         sim.put("schemaVersion", "0.1.0");
@@ -107,6 +109,22 @@ public class ExperimentLaunchService {
         metrics.add("pick_success").add("cycle_time_s")
                 .add("collision_count").add("position_error_mm");
         sim.put("timeout_s", 120);
+        // V0.5 W3：深度定位替代真值+注入噪声——depth_noise_mm 经实验采样注入
+        // 感知链（帧偏置+逐像素），perception_error_mm 随结果入 evidence
+        ObjectNode perception = sim.putObject("perception");
+        perception.put("enabled", true);
+        perception.put("topic", "/camera/rgbd/depth_image");
+        ArrayNode sensors = sim.putArray("sensors");
+        ObjectNode cam = sensors.addObject();
+        cam.put("id", "cam-overhead-perception");
+        ObjectNode camPose = cam.putObject("pose");
+        camPose.put("x", 0.5);
+        camPose.put("y", 0.0);
+        camPose.put("z", 0.85);
+        camPose.put("pitch", 0);
+        camPose.put("yaw", 0);
+        ObjectNode camParams = cam.putObject("params");
+        camParams.put("fov_deg", 87);
         return sim;
     }
 

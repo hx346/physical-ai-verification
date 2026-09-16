@@ -6,8 +6,10 @@ run_simulation_experiment 串行路径保留为参考实现，noise_instance/
 build_run_sim_ir/aggregate_runs 为两条路径共享（逐位一致可复现）。
 
 参数映射（显式可审，未映射参数如实标注，不猜）：
-- depth_noise_mm → 抓取目标定位噪声（N(0, σ) 三轴独立偏移，各向同性近似）——
-  模拟感知定位误差；判定仍用零件真实位姿，失败是真实物理失败
+- depth_noise_mm → V0.5 W3 感知链：模板 perception.enabled 时进深度帧噪声
+  （帧偏置 N(0,σ) 主导 + 逐像素 iid σ/10 次要 → 反投影质心 → 控制目标）；
+  无感知模板时回退 W4 语义：N(0, σ) 三轴独立偏移直接注入抓取目标。
+  判定（pick_success/position_error/perception_error）始终用零件真实位姿
 - object_size_mm → 场景零件尺寸（scene_builder overrides，单件箱）
 - friction_coeff → 零件表面摩擦 μ（scene_builder overrides）
 - illumination_lux / occlusion_percent / network_latency_ms → 未映射：
@@ -34,7 +36,8 @@ from .sampling import sample
 
 log = get_logger("experiment.sim_backend")
 
-AGG_METRICS = ("pick_success", "cycle_time_s", "position_error_mm", "collision_count")
+AGG_METRICS = ("pick_success", "cycle_time_s", "position_error_mm", "collision_count",
+                  "perception_error_mm")  # perception_error_mm：W3 真实感知链定位误差
 
 NOISE_STREAM_OFFSET = 7919  # 定位噪声流与场景 seed 解耦的固定偏移
 
@@ -52,9 +55,11 @@ def noise_instance(seed: int, i: int, sigma_m: float) -> tuple[float, float, flo
 
 
 def build_run_sim_ir(template: dict, row: dict, i: int, seed: int) -> dict:
-    """第 i run 的仿真 IR：模板 + 已采样参数实例（尺寸/摩擦/定位噪声）+ 独立场景 seed。
+    """第 i run 的仿真 IR：模板 + 已采样参数实例（尺寸/摩擦/感知噪声）+ 独立场景 seed。
 
     串行引擎与 DAG 子任务共用（参数映射注释见模块头），保证两条路径逐位一致。
+    V0.5 W3：模板 perception.enabled 时 depth_noise_mm → 感知链真实噪声
+    （帧偏置+逐像素，见 perception/depth_localize.py）；否则保持 W4 注入路径。
     """
     sim_ir = copy.deepcopy(template)
     env = sim_ir.setdefault("environment", {})
@@ -66,9 +71,17 @@ def build_run_sim_ir(template: dict, row: dict, i: int, seed: int) -> dict:
         overrides["object_size_mm"] = round(row["object_size_mm"], 2)
     if "friction_coeff" in row:
         overrides["friction_coeff"] = round(row["friction_coeff"], 3)
-    # depth_noise → 已采样的定位误差实例；graspNoiseXYZ 由 sequence 据此注入定位误差
-    sigma_m = row.get("depth_noise_mm", 0.0) / 1000.0
-    overrides["graspNoiseXYZ"] = list(noise_instance(seed, i, sigma_m))
+    if (template.get("perception") or {}).get("enabled"):
+        # W3：深度噪声进真实感知链（定位误差→控制目标→真实物理成败）
+        p = sim_ir.setdefault("perception", {})
+        p["enabled"] = True
+        p["topic"] = template["perception"].get("topic", "/camera/rgbd/depth_image")
+        p["depth_noise_mm"] = round(row.get("depth_noise_mm", 0.0), 2)
+        p["rng_seed"] = seed * 1000 + i * 31 + 7
+    else:
+        # W4：depth_noise → 已采样的定位误差实例直接注入控制目标
+        sigma_m = row.get("depth_noise_mm", 0.0) / 1000.0
+        overrides["graspNoiseXYZ"] = list(noise_instance(seed, i, sigma_m))
     return sim_ir
 
 
@@ -95,7 +108,7 @@ def run_simulation_experiment(experiment: dict,
     for i in range(n):
         row = {k: float(v) for k, v in zip(names, X[i], strict=False)}
         sim_ir = build_run_sim_ir(template, row, i, seed)
-        noise = sim_ir["environment"]["overrides"]["graspNoiseXYZ"]
+        noise = sim_ir["environment"]["overrides"].get("graspNoiseXYZ", (0, 0, 0))
 
         t0 = time.monotonic()
         run_rec = {"i": i, "params": {k: round(v, 4) for k, v in row.items()},
@@ -107,7 +120,8 @@ def run_simulation_experiment(experiment: dict,
             result = adapter.run(sim_ir, scene, float(sim_ir.get("timeout_s", 120.0)))
             run_rec["metrics"] = {k: v for k, v in result.metrics.items()
                                   if k in AGG_METRICS or k in ("pick_sequence_error",
-                                                               "descend_failed")}
+                                                               "descend_failed",
+                                                               "perception_failed")}
         except Exception as e:  # noqa: BLE001 — 单 run 失败不毁整批（failed 计数如实标注）
             run_rec["error"] = str(e)[:300]
             log.error("sim run failed, continuing batch", i=i, error=str(e))
@@ -151,6 +165,9 @@ def aggregate_runs(experiment: dict, runs: list[dict], names: list[str],
         "position_error_mm_mean": _mean("position_error_mm"),
         "position_error_mm_P95": _pct("position_error_mm", 95),
         "collision_count_mean": _mean("collision_count"),
+        # V0.5 W3：感知定位误差（真实感知链实测，vs 零件真值）——DoD 指标
+        "perception_error_mm_mean": _mean("perception_error_mm"),
+        "perception_error_mm_P95": _pct("perception_error_mm", 95),
         # dev-plan W4 假设验证：单工作站 N 次 headless 耗时曲线
         "wall_total_s": round(batch_wall_s, 1),
         "wall_per_run_s_mean": round(batch_wall_s / len(runs), 1) if runs else None,
@@ -167,8 +184,9 @@ def aggregate_runs(experiment: dict, runs: list[dict], names: list[str],
 
     assumptions = [
         {"name": "depth_noise_mapping", "provenance": "literature",
-         "note": "深度噪声 σ 以 N(0,σ) 三轴独立偏移注入抓取目标（各向同性近似），"
-                 "模拟感知定位误差；感知闭环（相机参与控制）归 V0.4"},
+         "note": ("感知闭环（V0.5 W3）：depth_noise_mm → 深度帧噪声（帧偏置 N(0,σ) 主导"
+                  "+逐像素 iid σ/10 次要）→ 反投影质心 → 控制目标；无感知模板时回退"
+                  "N(0,σ) 三轴独立注入（各向同性近似）")},
         {"name": "unmapped_params", "provenance": "literature",
          "note": "illumination_lux/occlusion_percent/network_latency_ms 未映射到仿真"
                  "（脚本化抓取无感知链）——其敏感性≈0 是映射边界，非物理结论"},

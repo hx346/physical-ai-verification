@@ -31,7 +31,8 @@ log = get_logger("worker.handler.experiment")
 TERMINAL_STATUSES = frozenset({"SUCCEEDED", "FAILED", "TIMEOUT", "CANCELLED"})
 # 子任务先于后续新批次被认领（priority 数值小者优先；父任务为 60）
 SUB_JOB_PRIORITY = 55
-_RUN_METRIC_WHITELIST = frozenset(AGG_METRICS) | {"pick_sequence_error", "descend_failed"}
+_RUN_METRIC_WHITELIST = (frozenset(AGG_METRICS)
+                          | {"pick_sequence_error", "descend_failed", "perception_failed"})
 
 
 def _progress_reporter(job_id: int):
@@ -120,7 +121,7 @@ def _run_simulator_dag(job) -> dict:
                     "parentJobKey": job.job_key,
                     "runIndex": i,
                     "params": {k: round(v, 4) for k, v in row.items()},
-                    "graspNoise": sim_ir["environment"]["overrides"]["graspNoiseXYZ"],
+                    "graspNoise": sim_ir["environment"]["overrides"].get("graspNoiseXYZ", (0, 0, 0)),
                 }, requires="gz", priority=SUB_JOB_PRIORITY)
         # 断点续跑复用计数：展开后即刻已完成的子任务 = 上次批次遗留成果
         pre = fetch_jobs(conn, sub_keys)

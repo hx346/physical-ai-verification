@@ -195,12 +195,15 @@ class GzBridge:
 
     实测：位姿 0.2s 就绪、cmd→运动延迟 ≤63ms、233 行/s——CLI one-shot 的
     ~0.3s 发布死区与 ~1s 位姿滞后一并消除（W2 终局定性的运动传输瓶颈）。
+    V0.5 W3：capture_depth——D 命令单帧深度落盘（帧 ~3.7MB 走文件不走 stdout）。
     行协议见 gz_bridge.cc 头注释。桥不可用时 GzClient 回退 CLI 三件套。
     """
 
     def __init__(self) -> None:
         self._poses: dict[str, tuple[float, float, float]] = {}
         self._count = 0
+        self._depth_reply: str | None = None
+        self._depth_evt = threading.Event()
         self._lock = threading.Lock()
         self._proc = subprocess.Popen(
             ["gz-bridge", WORLD],
@@ -220,6 +223,10 @@ class GzBridge:
                 elif parts[0] == "C" and len(parts) == 3:
                     with self._lock:
                         self._count += int(parts[1]) + int(parts[2])
+                elif parts[0] in ("D_OK", "D_ERR"):
+                    with self._lock:
+                        self._depth_reply = line.strip()
+                    self._depth_evt.set()
         except Exception:  # noqa: BLE001 — 桥异常静默终止（调用方按无数据处理）
             pass
 
@@ -242,6 +249,25 @@ class GzBridge:
             self._proc.stdin.flush()
         except (OSError, ValueError):
             pass  # 桥已退出：速度指令丢失，序列后续按无反馈超时如实记录
+
+    def capture_depth(self, topic: str, path: str, timeout_s: float = 6.0) -> tuple[int, int] | None:
+        """单帧深度捕获：D 命令 → 桥落盘 → D_OK (w,h)。失败/超时返回 None。"""
+        with self._lock:
+            self._depth_reply = None
+        self._depth_evt.clear()
+        try:
+            self._proc.stdin.write(f"D {topic} {path}\n")
+            self._proc.stdin.flush()
+        except (OSError, ValueError):
+            return None
+        if not self._depth_evt.wait(timeout_s):
+            return None
+        with self._lock:
+            reply = self._depth_reply
+        if reply is None or not reply.startswith("D_OK"):
+            return None
+        parts = reply.split()
+        return int(parts[1]), int(parts[2])
 
     def close(self) -> None:
         try:
@@ -294,6 +320,13 @@ class GzClient:
     def pose_of(self, name: str) -> tuple[float, float, float] | None:
         return self.poses.pose_of(name)
 
+    def capture_depth(self, topic: str, path: str, timeout_s: float = 6.0) -> tuple[int, int] | None:
+        """深度捕获仅桥路径支持（CLI 文本解析对 float32 帧不实际）——
+        无桥返回 None，感知层如实失败，不静默降级。"""
+        if self._bridge is None:
+            return None
+        return self._bridge.capture_depth(topic, path, timeout_s)
+
     def sim_time(self) -> float:
         raw = self._run("-e", "-t", f"/world/{WORLD}/stats", "-n", "1", timeout_s=6.0)
         m = re.search(r"sim_time\s*\{\s*sec:\s*(\d+)\s+nsec:\s*(\d+)", raw)
@@ -316,7 +349,7 @@ def _move_to(client: GzClient, target: tuple[float, float, float]) -> bool:
         if cur is None:
             time.sleep(0.1)
             continue
-        err = [t - c for t, c in zip(target, cur)]
+        err = [t - c for t, c in zip(target, cur, strict=False)]
         if max(abs(e) for e in err) < TOL:
             client.pub_twist(0, 0, HOVER_VZ)
             return True
@@ -327,17 +360,70 @@ def _move_to(client: GzClient, target: tuple[float, float, float]) -> bool:
     return False
 
 
+# V0.5 W3：夹爪 base 高于零件顶面的余量（= W2/W4 定型 graspOffset 的顶面形式
+# 0.027+0.3s 相对中心 = 0.027 相对顶面）——感知路径从感知顶面直接起算
+GRASP_TOP_MARGIN = 0.027
+
+
+def _perceive_target(client: GzClient, bundle: dict, log) -> dict | None:
+    """V0.5 W3 感知定位：standby（避遮挡）→ 单帧深度 → 噪声 → 反投影质心。
+
+    深度噪声（诚实两层模型，见 perception/depth_localize.py 模块注释）：
+    帧偏置 N(0,σ) 主导（单帧估计不被平均）+ 逐像素 iid σ/10 次要。
+    per-run rng_seed 由实验引擎注入（DAG/串行逐位一致可复现）。
+    失败返回 None（窗内无点/捕获失败），调用方如实记 perception_failed。
+    """
+    import os
+    import tempfile
+
+    import numpy as np
+
+    from ...perception import apply_depth_noise, localize_from_depth
+
+    p = bundle["perception"]
+    # 1) standby：夹爪先移到放置点上方（顶视相机下夹爪悬停在目标上方会挡零件；
+    #    z 带过滤剔除的是夹爪像素，但被遮挡的零件像素已丢失——必须物理避让）
+    _move_to(client, (bundle["place"]["x"], bundle["place"]["y"],
+                      bundle.get("gripperStartZ", 0.45)))
+    # 2) 单帧捕获（桥 D 命令落盘 float32 帧）
+    path = os.path.join(tempfile.gettempdir(), f"rv-depth-{os.getpid()}.bin")
+    dims = client.capture_depth(p["topic"], path, timeout_s=6.0)
+    if dims is None:
+        log.error("depth capture failed", topic=p["topic"])
+        return None
+    w, h = dims
+    depth = np.fromfile(path, dtype=np.float32)
+    os.unlink(path)
+    if depth.size < w * h:
+        log.error("depth frame truncated", expected=w * h, got=depth.size)
+        return None
+    depth = depth[:w * h].reshape(h, w)
+    # 3) 噪声注入 + 4) 反投影质心定位
+    sigma_m = float(p.get("depth_noise_mm", 0.0)) / 1000.0
+    rng = np.random.default_rng(int(p.get("rng_seed", 7)))
+    bias = float(rng.normal(0.0, sigma_m)) if sigma_m > 0 else 0.0
+    noisy = apply_depth_noise(depth, sigma_m / 10.0, bias, rng)
+    result = localize_from_depth(noisy, p["camera"], p["workspace"])
+    if result is None:
+        log.error("perception found no points in workspace")
+    else:
+        log.info("perceived target", sigma_mm=round(sigma_m * 1000, 2),
+                 bias_mm=round(bias * 1000, 2), **result)
+    return result
+
+
 def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
-    """回 home→下降→闭合→提升→平移→放置→张开。返回真实测量指标。"""
+    """感知（V0.5 W3 enabled 时）→ home→下降→闭合→提升→平移→放置→张开。
+
+    感知路径：控制目标（aim xy / grasp z）完全来自深度定位，不读零件真值；
+    真值仅用于判定（pick_success/position_error/perception_error）——失败是
+    真实物理失败。非感知路径保持 W4 语义：真值+注入噪声做控制目标。
+    """
     target = bundle["target"]
     place = bundle["place"]
-    grip_pos = bundle["gripJointPos"]
     start_z = bundle.get("gripperStartZ", 0.45)
     grasp_offset = bundle.get("graspOffset", 0.033)
-    # W4 批量实验：感知定位误差注入（per-run 采样的固定实例）。控制器目标 =
-    # 零件真值 + 噪声（模拟视觉定位误差）；pick_success/position_error 判定
-    # 仍用零件真实位姿——失败是真实物理失败，不预设结果。
-    nx, ny, nz = bundle.get("graspNoise", (0.0, 0.0, 0.0))
+    perception = bundle.get("perception") or {}
 
     # 位姿流就绪等待（订阅握手）
     for _ in range(30):
@@ -345,8 +431,7 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
             break
         time.sleep(0.5)
 
-    # 目标选择：抓取时刻的实时堆顶件（生成时"最高件"沉降后可能被埋——
-    # W2 第 11 轮实测：spawn 最高件落到箱底被其他件覆盖，按 spawn 位姿必夹空）
+    # 目标选择（判定对象）：抓取时刻的实时堆顶件
     part_names = bundle.get("partNames") or [target["name"]]
     live_parts = {n: p for n, p in
                   ((n, client.pose_of(n)) for n in part_names) if p}
@@ -359,28 +444,55 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
     t0 = client.sim_time()
     part0 = client.pose_of(tgt_name) or (target["x"], target["y"], target["z"])
     target_z_lift = part0[2] + 0.10
+    perception_error_mm: float | None = None
 
-    # 1) 回 home（xy 取零件实时位置——warmup 期间可能已被扰动；z 回安全高度）
-    live = client.pose_of(tgt_name) or part0
-    _move_to(client, (live[0] + nx, live[1] + ny, start_z))
+    if perception.get("enabled"):
+        # ---- V0.5 W3 感知路径：aim/grasp_z 来自深度定位（含 standby 避遮挡）----
+        perceived = _perceive_target(client, bundle, log)
+        truth0 = client.pose_of(tgt_name) or part0
+        if perceived is None:
+            # 感知失败（窗内无点/捕获失败）：真实失败快速收尾，不编造位姿
+            client.contacts.reset()
+            _move_to(client, (place["x"], place["y"], start_z))
+            t1 = client.sim_time()
+            return {
+                "pick_success": 0.0,
+                "cycle_time_s": round(max(0.0, t1 - t0), 3) if t0 >= 0 and t1 >= 0 else -1.0,
+                "collision_count": 0.0,
+                "perception_failed": 1.0,
+            }
+        aim_x, aim_y = perceived["x"], perceived["y"]
+        grasp_z = perceived["z_top"] + GRASP_TOP_MARGIN
+        perception_error_mm = round(
+            1000.0 * ((aim_x - truth0[0]) ** 2 + (aim_y - truth0[1]) ** 2) ** 0.5, 3)
+        log.info("perception error", perception_error_mm=perception_error_mm,
+                 truth=truth0, perceived=(aim_x, aim_y, perceived["z_top"]))
+    else:
+        # ---- W4 注入路径：真值 + per-run 固定噪声实例做控制目标 ----
+        nx, ny, nz = bundle.get("graspNoise", (0.0, 0.0, 0.0))
+        live = client.pose_of(tgt_name) or part0
+        aim_x, aim_y = live[0] + nx, live[1] + ny
+        grasp_z = live[2] + grasp_offset + nz
+
+    # 1) 回 home（感知路径从 standby 平移到 aim 上方；注入路径 xy 取实时位置）
+    _move_to(client, (aim_x, aim_y, start_z))
     # 2) 侧向下刀沿 y 轴（W2 第 24 轮定型）：指开合沿 x——沿 y 贴身滑入零件侧带时
     #    x 向间隙仍在，指不碰零件任何面 → 平移精确居中 → 对称力闭合。
     #    （沿 x approach 会被开口侧指面顶住停在差 clearance 处→偏斜抓取→挤飞；
     #      沿 z 下插会被顶面接触顶住停在指底=零件顶面。）
-    live2 = client.pose_of(tgt_name) or live
-    grasp_z = live2[2] + grasp_offset + nz
-    offs_y = (1.0 if live2[1] >= 0 else -1.0) * min(LATERAL_OFFS, 0.09 - abs(live2[1]))
-    lateral_ok = _move_to(client, (live2[0] + nx, live2[1] + ny + offs_y, grasp_z))
-    approach_ok = _move_to(client, (live2[0] + nx, live2[1] + ny, grasp_z))
+    offs_y = (1.0 if aim_y >= 0 else -1.0) * min(LATERAL_OFFS, 0.09 - abs(aim_y))
+    lateral_ok = _move_to(client, (aim_x, aim_y + offs_y, grasp_z))
+    approach_ok = _move_to(client, (aim_x, aim_y, grasp_z))
     log.info("descend done", lateral_ok=lateral_ok, approach_ok=approach_ok,
-             gripper=client.pose_of("gripper"), part=live2,
-             target_grasp_z=round(grasp_z, 4), lateral_y=round(offs_y, 4))
+             gripper=client.pose_of("gripper"), part=client.pose_of(tgt_name),
+             target_grasp_z=round(grasp_z, 4), lateral_y=round(offs_y, 4),
+             aim=(round(aim_x, 4), round(aim_y, 4)))
     if not (lateral_ok and approach_ok):
         # 下刀未到位（定位误差过大被零件顶住等）：真实失败，快速收尾——
         # 跳过闭合/提升/放置（真实机器人也不会闭爪），回 home 结束 cycle。
         # 否则后续每步各吃 25s 超时，失败 run wall 从 ~60s 拖到 ~196s（W4 实测）。
         client.contacts.reset()
-        _move_to(client, (live[0], live[1], start_z))
+        _move_to(client, (aim_x, aim_y, start_z))
         t1 = client.sim_time()
         final = client.pose_of(tgt_name)
         metrics = {
@@ -389,11 +501,13 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
             "collision_count": 0.0,
             "descend_failed": 1.0,
         }
+        if perception_error_mm is not None:
+            metrics["perception_error_mm"] = perception_error_mm
         if final is not None:
             metrics["position_error_mm"] = round(
                 1000.0 * ((final[0] - place["x"]) ** 2 + (final[1] - place["y"]) ** 2) ** 0.5, 3)
             metrics["placed_height_m"] = round(final[2], 4)
-        log.info("descend failed, fast-finish cycle", part=live2)
+        log.info("descend failed, fast-finish cycle", aim=(round(aim_x, 4), round(aim_y, 4)))
         return metrics
     # 3) 力控渐进夹紧：use_force_commands=true 时 cmd 是力值（N）——
     #    W1-W2 曾误发位置值 0.027 当力（≈0.027N 零力，滑脱根因）。力来自 IR grasp_force_n。
@@ -407,8 +521,8 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
     # 注：保持力降档（60→15N 减接触储能）实测两难——弹飞仅部分缓解且降档扰动
     # 令部分零件脱夹（pick_success 回归）。全程保持抓取力，弹飞残余归 V0.4
     # （位置控制夹持 / SDF 软接触参数——DART 力控+突释的数值特性）。
-    # 4) 提升
-    _move_to(client, (live[0], live[1], start_z))
+    # 4) 提升（回 aim 上方——两条路径的控制目标一致）
+    _move_to(client, (aim_x, aim_y, start_z))
     time.sleep(0.5)
     part_lifted = client.pose_of(tgt_name)
     picked = part_lifted is not None and part_lifted[2] > target_z_lift
@@ -447,6 +561,8 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
         # 闭合→提升窗口两指 contact sensor 话题的接触条目数（每步每指累计）
         "collision_count": float(collision_count),
     }
+    if perception_error_mm is not None:
+        metrics["perception_error_mm"] = perception_error_mm
     if final is not None:
         metrics["position_error_mm"] = round(
             1000.0 * ((final[0] - place["x"]) ** 2 + (final[1] - place["y"]) ** 2) ** 0.5, 3)

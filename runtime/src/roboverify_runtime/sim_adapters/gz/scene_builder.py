@@ -295,20 +295,50 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     pose = sensor.get("pose") or {"x": 0.5, "y": 0.0, "z": 0.85, "pitch": 90, "yaw": 0}
     fov_deg = (sensor.get("params") or {}).get("fov_deg", 87)
 
+    cam_x = pose.get("x", 0.5)
+    cam_y = pose.get("y", 0.0)
+    cam_z = pose.get("z", 0.85)
+    cam_pitch_rad = round(math.radians(-(pose.get("pitch", 90) - 90)), 4)
+    fov_rad = round(2 * math.atan(math.tan(math.radians(fov_deg) / 2)), 4)
+
     sdf = WORLD_TEMPLATE.format(
         bin=bin_sdf,
         parts="\n".join(parts),
         fingers=fingers,
-        cam_x=pose.get("x", 0.5), cam_y=pose.get("y", 0.0), cam_z=pose.get("z", 0.85),
-        cam_pitch_rad=round(math.radians(-(pose.get("pitch", 90) - 90)), 4),
+        cam_x=cam_x, cam_y=cam_y, cam_z=cam_z,
+        cam_pitch_rad=cam_pitch_rad,
         cam_yaw_rad=round(math.radians(pose.get("yaw", 0)), 4),
-        fov_rad=round(2 * math.atan(math.tan(math.radians(fov_deg) / 2)), 4),
+        fov_rad=fov_rad,
     )
     half_grip = (target["size_m"] - 0.002) / 2.0  # 闭合半间隙：1mm 挤压量
     grasp_force_n = float(((sim_ir.get("script") or {}).get("params") or {}).get("grasp_force_n", 40))
     # W4 实验引擎：感知定位误差实例（per-run 采样后经 overrides 传入；默认零噪声）
     noise_xyz = overrides.get("graspNoiseXYZ") or (0.0, 0.0, 0.0)
+
+    # V0.5 W3 感知链配置：enabled 时序列走深度定位（控制目标不读真值）。
+    # v0 仅支持顶视相机（rpy y=+90°，光轴 -Z）——反投影几何按此约定（见
+    # perception/depth_localize.py）；非顶视配置 fail-fast，不静默给错几何。
+    perception_cfg = None
+    perception_ir = sim_ir.get("perception") or {}
+    if perception_ir.get("enabled"):
+        if abs(cam_pitch_rad - math.pi / 2) > 0.01:
+            raise ValueError(
+                "perception v0 仅支持顶视相机（IR sensor pose pitch=0）；"
+                f"当前 cam_pitch_rad={cam_pitch_rad}")
+        from ...perception import default_workspace, intrinsics_from_fov
+
+        perception_cfg = {
+            "enabled": True,
+            "topic": perception_ir.get("topic", "/camera/rgbd/depth_image"),
+            "depth_noise_mm": float(perception_ir.get("depth_noise_mm", 0.0)),
+            "rng_seed": int(perception_ir.get("rng_seed", seed * 1009 + 17)),
+            "camera": {**intrinsics_from_fov(1280, 720, fov_rad),
+                       "x": cam_x, "y": cam_y, "z": cam_z},
+            "workspace": default_workspace(0.5, bin_w, bin_d),
+        }
+
     return {
+        "perception": perception_cfg,
         "graspNoise": (float(noise_xyz[0]), float(noise_xyz[1]), float(noise_xyz[2])),
         "graspForceN": grasp_force_n,
         "sdf": sdf,
