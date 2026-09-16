@@ -63,6 +63,37 @@ def claim_next_job(conn: psycopg.Connection, worker_id: str,
                           payload=payload, attempts=row[4], max_attempts=row[5])
 
 
+def enqueue_job(conn: psycopg.Connection, job_key: str, job_type: str, payload: dict,
+                requires: str | None = None, priority: int = 100) -> bool:
+    """投递（幂等 job_key，与 Java JobQueueService 同语义）。
+
+    V0.5 W1 DAG 编排：experiment 父任务展开 simulation 子任务时使用——
+    父任务重跑时已完成子任务 ON CONFLICT DO NOTHING，天然断点续跑。
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO job_queue (job_key, type, payload, priority, requires) "
+            "VALUES (%s, %s, %s::jsonb, %s, %s) ON CONFLICT (job_key) DO NOTHING",
+            (job_key, job_type, json.dumps(payload, ensure_ascii=False), priority, requires))
+        return cur.rowcount > 0
+
+
+def fetch_jobs(conn: psycopg.Connection, job_keys: list[str]) -> dict[str, dict]:
+    """按键批量取任务状态/载荷（DAG 收割轮询）。返回 job_key → {status, payload, lastError}。"""
+    if not job_keys:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT job_key, status, payload, last_error FROM job_queue WHERE job_key = ANY(%s)",
+            (job_keys,))
+        rows = cur.fetchall()
+    out: dict[str, dict] = {}
+    for r in rows:
+        payload = r[2] if isinstance(r[2], dict) else json.loads(r[2])
+        out[r[0]] = {"status": r[1], "payload": payload, "lastError": r[3]}
+    return out
+
+
 def complete_job(conn: psycopg.Connection, job_id: int, result: dict) -> None:
     with conn.cursor() as cur:
         cur.execute(

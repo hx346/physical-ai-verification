@@ -7,7 +7,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from roboverify_runtime.experiment.sim_backend import _aggregate, _src, _wilson
+from roboverify_runtime.experiment.sim_backend import (
+    _aggregate,
+    _src,
+    _wilson,
+    build_run_sim_ir,
+    noise_instance,
+)
 
 
 def test_src_ranks_dominant_factor_top():
@@ -84,3 +90,37 @@ def test_aggregate_structure_and_failed_isolation():
     assert out["sensitivity"][0]["name"] == "depth_noise_mm"
     assert out["backend"] == "simulator"
     assert out["rSquared"]["position_error_mm"] == 1.0
+
+
+def test_noise_instance_matches_serial_stream():
+    """DAG 与串行路径逐位一致：noise_instance(i) = 串行噪声流第 i 组。
+
+    gauss 的 uniform 消耗只与调用次数相关（与 σ 无关）——跳过前 3i 次调用
+    即复现串行序列；这是子任务并行展开可复现性的根据。
+    """
+    import random
+
+    seed = 20260914
+    rng = random.Random(seed + 7919)
+    sigmas = [0.0, 0.005, 0.012]
+    serial = [[round(rng.gauss(0.0, sigmas[i % 3]), 4) for _ in range(3)] for i in range(10)]
+    for i in range(10):
+        assert list(noise_instance(seed, i, sigmas[i % 3])) == serial[i]
+
+
+def test_build_run_sim_ir_applies_params_and_seed():
+    template = {"environment": {"seed": 42, "overrides": {"n_parts": 1}}, "timeout_s": 60}
+    row = {"object_size_mm": 55.1234, "friction_coeff": 0.4567, "depth_noise_mm": 10.0,
+           "illumination_lux": 1000.0}
+    ir = build_run_sim_ir(template, row, 3, 20260914)
+    assert ir["environment"]["seed"] == 45
+    assert ir["environment"]["overrides"]["object_size_mm"] == 55.12
+    assert ir["environment"]["overrides"]["friction_coeff"] == 0.457
+    assert len(ir["environment"]["overrides"]["graspNoiseXYZ"]) == 3
+    # 未映射参数不进 overrides（显式映射边界，不猜）
+    assert "illumination_lux" not in ir["environment"]["overrides"]
+    # 模板不被污染（深拷贝）
+    assert "object_size_mm" not in template["environment"]["overrides"]
+    # 零噪声仍产生三轴实例（全 0）
+    ir0 = build_run_sim_ir(template, {"depth_noise_mm": 0.0}, 0, 20260914)
+    assert ir0["environment"]["overrides"]["graspNoiseXYZ"] == [0.0, 0.0, 0.0]

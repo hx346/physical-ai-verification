@@ -42,3 +42,30 @@ def test_claim_marks_running_and_idempotent_complete() -> None:
         assert status == "SUCCEEDED" and done == "true"
         with conn.cursor() as cur:
             cur.execute("DELETE FROM job_queue WHERE id=%s", (job.id,))
+
+
+def test_enqueue_and_fetch_for_dag() -> None:
+    """V0.5 W1 DAG 原语：幂等投递 + 按键收割查询。"""
+    import psycopg
+
+    from roboverify_runtime.worker.queue import enqueue_job, fetch_jobs
+
+    base = f"test-dag:{uuid.uuid4()}"
+    keys = [f"{base}:run:{i}" for i in range(3)]
+    with psycopg.connect(settings.database_url) as conn:
+        with conn.transaction():
+            for i, k in enumerate(keys):
+                inserted = enqueue_job(conn, k, "simulation",
+                                       {"runIndex": i, "params": {"a": 1.0}},
+                                       requires="gz", priority=55)
+                assert inserted is True
+        # 幂等：重复投递不覆盖已有行
+        with conn.transaction():
+            assert enqueue_job(conn, keys[0], "simulation", {"clobber": True}) is False
+        got = fetch_jobs(conn, keys)
+        assert set(got) == set(keys)
+        assert got[keys[0]]["payload"]["params"] == {"a": 1.0}  # 未被 clobber
+        assert all(v["status"] == "QUEUED" for v in got.values())
+        assert fetch_jobs(conn, []) == {}
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM job_queue WHERE job_key = ANY(%s)", (keys,))

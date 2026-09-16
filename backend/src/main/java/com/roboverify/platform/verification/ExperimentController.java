@@ -99,9 +99,11 @@ public class ExperimentController {
         // 短键：exp:项目前8:系统前8:时间戳（evidence.run_id 有长度限制）
         String jobKey = "exp:" + shortKey(request.projectId()) + ":" + shortKey(request.systemConfigId())
                 + ":" + Long.toHexString(System.currentTimeMillis());
-        // 仿真实验必须在 sim-worker 执行（requires=gz 能力路由，普通 worker 无 gz）
+        // V0.5 W1 DAG：仿真实验父任务只做编排（采样→展开子 job→收割聚合），在普通
+        // worker（orchestrator）执行；单次仿真由子 job requires=gz 路由到 sim-worker。
+        // 若父任务仍要求 gz：单 sim-worker 会占住唯一 gz 槽等子任务，自我饿死。
         jobQueueService.enqueue(jobKey, JOB_TYPE_EXPERIMENT, payload.toString(), MDC.get("traceId"),
-                simulator ? "gz" : null, (short) 60);
+                simulator ? "orchestrator" : null, (short) 60);
         return Result.ok(Map.of("jobKey", jobKey));
     }
 

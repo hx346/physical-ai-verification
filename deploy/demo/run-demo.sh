@@ -176,9 +176,9 @@ else
   echo "  跳过（SIM=1 且启动 sim-worker 后执行：docker compose --profile sim up -d sim-worker）"
 fi
 
-# 第九幕（可选，需 sim-worker）：批量仿真实验（W4）——LHS 采样 → N 次 headless gz
+# 第九幕（可选，需 sim-worker）：批量仿真实验（W4 串行 → V0.5 W1 DAG 并行）——LHS 采样 → N 个子 job
 # → 聚合 + SRC 敏感性。n=50 约 1h（单次 ~60s wall），n 可用 SIM_EXP_N 覆盖。
-log "9. 批量仿真实验（可选：SIM_EXP=1 且 sim-worker 运行时执行，n=50 约 1h）"
+log "9. 批量仿真实验（可选：SIM_EXP=1 且 sim-worker 运行时执行，n=50 约 1h 串行；3 sim-worker 并行约 20min）"
 if [ "${SIM_EXP:-0}" = "1" ]; then
   N="${SIM_EXP_N:-50}"
   EXP_JOB=$(post "/api/experiments" "{\"projectId\":\"$PROJECT\",\"systemConfigId\":\"$SYS_RGBD\",\"backend\":\"simulator\",\"n\":$N}" | jq_get "d['data']['jobKey']")

@@ -7,6 +7,18 @@
 
 ### Added
 
+- **V0.5 W1 批次编排 DAG 化（2026-09-16）**：experiment backend=simulator 展开为两级 DAG——
+  父任务（requires=orchestrator，普通 worker）LHS 采样 → N 个 simulation 子 job
+  （幂等键 `{parent}:run:{i}`，requires=gz）多 sim-worker SKIP LOCKED 并行认领 → 父任务
+  轮询收割 → aggregate_runs 聚合 + SRC；断点续跑（父任务中断重跑时已完成子 job ON CONFLICT
+  复用，aggregates.reusedRuns 如实计数）；批次兜底时限（simulation.batch_deadline_s 可配，
+  默认 max(30min, 1.2×n×单次超时)，超时收割部分结果标 deadlineExceeded 不掩盖）；
+  worker_id 默认取容器 hostname（scale 实例日志/locked_by 可区分）；compose sim-worker 去
+  container_name 支持 `--scale sim-worker=N`。容器实测：3 sim-worker 6-run 批次 wall
+  141.9s（串行基线 ~410s）；父任务中断恢复 reusedRuns=6 零重跑
+- **V0.5 W1.4 批次进度可见**：sim 引擎 progress_cb → job payload.progress={done,total} →
+  status API 透出（DAG 路径下由父任务轮询时更新）
+
 - **仿真证据落库 + 矩阵下钻（M2 DoD 完结，2026-09-15）**：`SimulationController`（POST /api/simulations
   派发、GET 轮询摄取幂等、按项目/需求查询）；摄取时 scene.sdf/run.log 归档对象存储
   （/sim-logs/{jobKey}/…，evidence.artifacts 引用）；前端矩阵 Drawer 关联仿真证据区块；demo 第八幕（SIM=1 可选）

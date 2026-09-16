@@ -1,5 +1,10 @@
 """backend=simulator 实验引擎（V0.3 W4）：LHS 采样 → N 次 headless gz → 聚合 + 一阶敏感性。
 
+V0.5 W1 起生产路径为 DAG（worker/handlers/experiment.py）：父任务采样后展开
+N 个 simulation 子 job 并行执行、轮询收割后调 aggregate_runs——本模块的
+run_simulation_experiment 串行路径保留为参考实现，noise_instance/
+build_run_sim_ir/aggregate_runs 为两条路径共享（逐位一致可复现）。
+
 参数映射（显式可审，未映射参数如实标注，不猜）：
 - depth_noise_mm → 抓取目标定位噪声（N(0, σ) 三轴独立偏移，各向同性近似）——
   模拟感知定位误差；判定仍用零件真实位姿，失败是真实物理失败
@@ -31,6 +36,41 @@ log = get_logger("experiment.sim_backend")
 
 AGG_METRICS = ("pick_success", "cycle_time_s", "position_error_mm", "collision_count")
 
+NOISE_STREAM_OFFSET = 7919  # 定位噪声流与场景 seed 解耦的固定偏移
+
+
+def noise_instance(seed: int, i: int, sigma_m: float) -> tuple[float, float, float]:
+    """第 i run 的定位噪声实例（三轴独立，各向同性近似）。
+
+    与串行路径同流可复现：random.Random(seed+7919) 的 gauss 调用序列中，
+    uniform 消耗只与调用次数相关（与 σ 无关）——跳过前 3i 次调用即得第 i 组。
+    """
+    rng = random.Random(seed + NOISE_STREAM_OFFSET)
+    for _ in range(3 * i):
+        rng.gauss(0.0, 1.0)
+    return tuple(round(rng.gauss(0.0, sigma_m), 4) for _ in range(3))
+
+
+def build_run_sim_ir(template: dict, row: dict, i: int, seed: int) -> dict:
+    """第 i run 的仿真 IR：模板 + 已采样参数实例（尺寸/摩擦/定位噪声）+ 独立场景 seed。
+
+    串行引擎与 DAG 子任务共用（参数映射注释见模块头），保证两条路径逐位一致。
+    """
+    sim_ir = copy.deepcopy(template)
+    env = sim_ir.setdefault("environment", {})
+    # 每次运行独立场景随机化（零件位姿/质量）——同参数不同实现，实验随机性来源
+    env["seed"] = int(env.get("seed", 42)) + i
+    overrides = env.setdefault("overrides", {})
+    overrides.setdefault("n_parts", 1)
+    if "object_size_mm" in row:
+        overrides["object_size_mm"] = round(row["object_size_mm"], 2)
+    if "friction_coeff" in row:
+        overrides["friction_coeff"] = round(row["friction_coeff"], 3)
+    # depth_noise → 已采样的定位误差实例；graspNoiseXYZ 由 sequence 据此注入定位误差
+    sigma_m = row.get("depth_noise_mm", 0.0) / 1000.0
+    overrides["graspNoiseXYZ"] = list(noise_instance(seed, i, sigma_m))
+    return sim_ir
+
 
 def run_simulation_experiment(experiment: dict,
                               progress_cb: Callable[[int, int], None] | None = None) -> dict:
@@ -48,27 +88,14 @@ def run_simulation_experiment(experiment: dict,
         raise ValueError("backend=simulator 实验缺少 simulation 模板")
 
     X, names = sample(params, sampling.get("method", "lhs"), n, seed)
-    noise_rng = random.Random(seed + 7919)  # 定位噪声独立流（与场景 seed 解耦，可复现）
     adapter = get_adapter("gz")
 
     runs: list[dict] = []
     t_batch = time.monotonic()
     for i in range(n):
-        row = {k: float(v) for k, v in zip(names, X[i])}
-        sim_ir = copy.deepcopy(template)
-        env = sim_ir.setdefault("environment", {})
-        # 每次运行独立场景随机化（零件位姿/质量）——同参数不同实现，实验随机性来源
-        env["seed"] = int(env.get("seed", 42)) + i
-        overrides = env.setdefault("overrides", {})
-        overrides.setdefault("n_parts", 1)
-        if "object_size_mm" in row:
-            overrides["object_size_mm"] = round(row["object_size_mm"], 2)
-        if "friction_coeff" in row:
-            overrides["friction_coeff"] = round(row["friction_coeff"], 3)
-        # depth_noise → 已采样的定位误差实例（三轴独立，各向同性近似）
-        sigma_m = row.get("depth_noise_mm", 0.0) / 1000.0
-        noise = tuple(round(noise_rng.gauss(0.0, sigma_m), 4) for _ in range(3))
-        overrides["graspNoiseXYZ"] = list(noise)
+        row = {k: float(v) for k, v in zip(names, X[i], strict=False)}
+        sim_ir = build_run_sim_ir(template, row, i, seed)
+        noise = sim_ir["environment"]["overrides"]["graspNoiseXYZ"]
 
         t0 = time.monotonic()
         run_rec = {"i": i, "params": {k: round(v, 4) for k, v in row.items()},
@@ -93,11 +120,11 @@ def run_simulation_experiment(experiment: dict,
             progress_cb(i + 1, n)
     batch_wall = time.monotonic() - t_batch
 
-    return _aggregate(experiment, runs, names, X, batch_wall)
+    return aggregate_runs(experiment, runs, names, X, batch_wall)
 
 
-def _aggregate(experiment: dict, runs: list[dict], names: list[str],
-               X: np.ndarray, batch_wall_s: float) -> dict:
+def aggregate_runs(experiment: dict, runs: list[dict], names: list[str],
+                   X: np.ndarray, batch_wall_s: float) -> dict:
     ok_runs = [r for r in runs if r.get("metrics", {}).get("pick_sequence_error") is None
                and "error" not in r]
     failed = len(runs) - len(ok_runs)
@@ -161,6 +188,9 @@ def _aggregate(experiment: dict, runs: list[dict], names: list[str],
         # 逐 run 明细（参数实例 + 指标 + 单次耗时）——留 job payload，可追溯可复算
         "runs": runs,
     }
+
+
+_aggregate = aggregate_runs  # 旧名兼容（单测引用）
 
 
 def _wilson(k: int, n: int, z: float = 1.96) -> list[float] | None:

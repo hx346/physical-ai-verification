@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import socket
 import threading
 import time
 
@@ -16,6 +18,12 @@ from .registry import get_handler, registered_types
 log = get_logger("worker.runner")
 
 RECOVER_INTERVAL_S = 60.0
+
+
+def _default_worker_id() -> str:
+    """容器内默认取 hostname（scale 出的实例各不相同），否则本机名——
+    多 worker 并行时 locked_by/日志可区分实例（V0.5 W1.2）。"""
+    return os.environ.get("ROBOVERIFY_WORKER_ID") or socket.gethostname()
 
 
 def _heartbeat_loop(job_id: int, stop: threading.Event) -> None:
@@ -35,7 +43,9 @@ def _heartbeat_loop(job_id: int, stop: threading.Event) -> None:
         log.warning("heartbeat loop stopped, job may be recovered", job_id=job_id)
 
 
-def run_forever(worker_id: str = "worker-1") -> None:
+def run_forever(worker_id: str | None = None) -> None:
+    if worker_id is None:
+        worker_id = _default_worker_id()
     setup_logging(settings.log_level)
     capabilities = [c.strip() for c in settings.worker_capabilities.split(",") if c.strip()]
     log.info("worker starting", worker_id=worker_id, handlers=registered_types() or ["<none>"],

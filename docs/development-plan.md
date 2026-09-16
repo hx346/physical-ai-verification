@@ -357,6 +357,28 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 | 感知定位精度不足（无标定真机外参） | 高 | 仿真内外参自洽（相机位姿来自场景 SDF 真值）；真机标定归 V0.8 |
 | 多 worker 资源争抢（CPU/内存） | 中 | N 按 CPU 核数上限约束；RTF 退化如实记录入 wall 曲线 |
 | 感知链与脚本序列耦合过深 | 中 | 定位模块独立（输入深度图 → 输出位姿假设），序列只消费接口 |
+
+## V0.5 进展记录
+
+- 2026-09-16 **W1 批次编排 DAG 化完成（W1.1-W1.4 全落地）**：
+  - **两级 DAG**：experiment 父任务（`requires=orchestrator`，普通 worker）LHS 采样 → 展开
+    N 个 simulation 子 job（幂等键 `{parent}:run:{i}`，`requires=gz`）→ 父任务轮询收割 →
+    aggregate_runs 聚合 + SRC。**关键设计：父任务必须与 sim-worker 能力隔离**——单
+    sim-worker 场景下若父任务被 gz worker 认领，会占住唯一 gz 槽等子任务自我饿死；
+    引入 `orchestrator` 能力反向路由（worker 容器 ROBOVERIFY_WORKER_CAPABILITIES=orchestrator）。
+  - **可复现性**：noise_instance(seed, i) 按 gauss 调用次数跳过（uniform 消耗与 σ 无关），
+    DAG 与串行参考实现逐位一致（单测覆盖）；采样只在父任务做一次，子 job 载荷携带
+    已实例化参数与噪声。
+  - **断点续跑实测**：父任务容器中断（心跳 TTL 过期 recover 重入队）→ 重跑 → 已完成
+    子 job ON CONFLICT 复用零重跑（`aggregates.reusedRuns=6`，纯收割 wall 0.1s，E00253）。
+  - **并行实测**：3 sim-worker × n=6 批次 wall 141.9s（单 run ~68s，串行基线 ~410s，
+    加速比 ~2.9×）；sim-worker 去 container_name 后 `--scale` 生效；worker_id 默认容器
+    hostname（scale 实例 locked_by/日志可区分）。
+  - **兜底语义**：批次时限 `simulation.batch_deadline_s` 可配（默认 max(30min,
+    1.2×n×单次超时)），超时收割部分结果并标 `deadlineExceeded`，不掩盖；子 job FAILED
+    计入 failed run（单 run 失败不毁整批，W4 语义保留）。
+- 2026-09-15 **W1.4 批次进度可见**：progress_cb → job payload.progress={done,total} →
+  status API 透出（DAG 路径下由父任务轮询更新）；V0.5 计划落档（版本号修正 V0.3→V0.5 直跳）。
 - 2026-09-15 **W2 终局（碰撞单变量实验 + 15 轮生产迭代，commit 3 项根因修复）**：
   - **"DART 接触失效"假设被证伪**：单变量实验（deploy/sim/collision_probe.py，零 g/
     静态 base/单零件/仅闭合力）显示接触检测与响应从未缺失（82 万接触条目、指停在零件面

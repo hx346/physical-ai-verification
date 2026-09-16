@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     monte_carlo_n_default: int = 10_000
     worker_poll_interval_s: float = 2.0
     worker_lock_ttl_s: int = 300
+    # DAG 编排（V0.5 W1）：父任务轮询子任务终态的间隔
+    dag_poll_interval_s: float = 5.0
     # 能力标签（逗号分隔）：sim-worker 设 "gz"，只认领 requires 匹配的任务
     worker_capabilities: str = ""
     job_max_attempts: int = 3

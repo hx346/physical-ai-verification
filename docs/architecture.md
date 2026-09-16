@@ -64,7 +64,7 @@ RoboVerify 是 **Engineering Verification Runtime**：输入 Requirement IR + Sy
 
 1. **Platform ↔ Runtime REST 契约**：OpenAPI 3.1，`schemas/openapi/`。内核端点无状态、可重放（幂等由 `requestId` 保证）。
 2. **Engineering IR JSON Schema**：`schemas/ir/*.schema.json`，JSON Schema draft 2020-12，语言中立；Java 侧与 Python 侧都以此校验，禁止各自手写模型漂移。IR 版本规则：`schemaVersion` 字段 + 语义化版本；破坏性变更升主版本并双版本共存一个过渡期。
-3. **任务队列协议**：PostgreSQL 表 `job_queue`（见 §6），Worker 用 `SELECT ... FOR UPDATE SKIP LOCKED` 认领；状态机 `QUEUED → RUNNING → SUCCEEDED / FAILED / TIMEOUT / CANCELLED`。
+3. **任务队列协议**：PostgreSQL 表 `job_queue`（见 §6），Worker 用 `SELECT ... FOR UPDATE SKIP LOCKED` 认领；状态机 `QUEUED → RUNNING → SUCCEEDED / FAILED / TIMEOUT / CANCELLED`。能力路由 `requires`：`gz`（simulation，仅 sim-worker）、`orchestrator`（experiment 父任务，仅普通 worker——sim-worker 认领会占住唯一 gz 槽自我饿死）。V0.5 W1 起 simulation 实验为两级 DAG：experiment 父任务采样后展开 N 个幂等子 job（`{parent}:run:{i}`），多 sim-worker 并行认领，父任务轮询收割聚合；父任务中断重跑时已完成子 job 直接复用（断点续跑）。
 
 ## 4. Engineering IR 体系
 

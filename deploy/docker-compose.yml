@@ -68,6 +68,8 @@ services:
     restart: unless-stopped
 
   # 实验引擎 worker：同一镜像，跑任务消费循环（SKIP LOCKED）
+  # capabilities=orchestrator：V0.5 W1 DAG 父任务（experiment backend=simulator 编排）
+  # 必须由本 worker 认领——sim-worker 若认领会占住唯一 gz 槽等子任务，自我饿死
   worker:
     build:
       context: ..
@@ -76,18 +78,20 @@ services:
     command: ["python", "-m", "roboverify_runtime.worker.runner"]
     environment:
       ROBOVERIFY_DATABASE_URL: postgresql://roboverify:roboverify@postgres:5432/roboverify
+      ROBOVERIFY_WORKER_CAPABILITIES: orchestrator
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
   # 仿真 worker（gz 集成已验证 2026-09-15）：docker compose --profile sim up -d sim-worker
-  # 能力路由：requires='gz' 的任务只被本 worker 认领（普通 worker 无 gz 会显式失败）
+  # 并行扩容（V0.5 W1.2）：docker compose --profile sim up -d --scale sim-worker=N
+  # （无 container_name 才允许 scale；SKIP LOCKED 天然支持多 worker 抢占）
+  # 能力路由：requires='gz' 的任务（simulation 子 job）只被本 worker 认领
   sim-worker:
     build:
       context: ..
       dockerfile: deploy/sim/gz.Dockerfile
-    container_name: roboverify-sim-worker
     profiles: ["sim"]
     environment:
       ROBOVERIFY_DATABASE_URL: postgresql://roboverify:roboverify@postgres:5432/roboverify
