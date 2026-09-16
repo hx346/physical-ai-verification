@@ -184,15 +184,17 @@ GRIPPER_TEMPLATE = """    <model name="gripper">
       </joint>
       <!-- 整体速度控制（worker 发 /model/gripper/cmd_vel，gz.msgs.Twist）-->
       <plugin filename="gz-sim-velocity-control-system" name="gz::sim::systems::VelocityControl"/>
-      <!-- 关节位置控制（model 级）：/model/gripper/finger_*_joint/cmd，gz.msgs.Double -->
+      <!-- 关节控制（model 级）：/model/gripper/finger_*_joint/cmd，gz.msgs.Double。
+           V0.5 W4 双模式：use_force_commands=true（cmd=力 N，W1-W3 定型）/
+           false（cmd=关节位置 m，位置伺服夹持——释放无累积法向力突释，弹飞根治候选） -->
       <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
         <joint_name>finger_left_joint</joint_name>
-        <use_force_commands>true</use_force_commands>
+        <use_force_commands>{use_force}</use_force_commands>
         <topic>/model/gripper/finger_left_joint/cmd</topic>
       </plugin>
       <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
         <joint_name>finger_right_joint</joint_name>
-        <use_force_commands>true</use_force_commands>
+        <use_force_commands>{use_force}</use_force_commands>
         <topic>/model/gripper/finger_right_joint/cmd</topic>
       </plugin>
     </model>"""
@@ -254,7 +256,7 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
         # y 向收紧到 ±0.03：抓取序列沿 y 侧向下刀需箱内偏位空间（|y|+0.05 偏位 ≤ 0.09）
         y = round(rng.uniform(-0.03, 0.03), 4)
         z = round(0.05 + 0.12 * rng.random(), 4)
-        mass = round(rng.uniform(0.05, 0.8), 3)
+        mass = round(overrides.get("part_mass_kg", rng.uniform(0.05, 0.8)), 3)
         s, sz_m = round(size_m, 4), round(size_m * 0.6, 4)
         parts.append(PART_TEMPLATE.format(
             idx=i, x=x, y=y, z=z,
@@ -275,6 +277,12 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     # 目标：最高零件（最上层，遮挡/堆叠干扰最小）；放置点：料箱旁空地
     target = max(part_meta, key=lambda p: p["z"])
     place = {"x": 1.2, "y": 0.0, "z": 0.05}
+    # 放置面支撑高度（V0.5 W4 弹飞根治的关键场景事实）：地面 plane 在 z=-0.01
+    # （非 0！），箱内底板顶 0.03——零件真实静止 z = 支撑面 + 半高。放置点在
+    # 箱外空地 → -0.01。释放闭环按此触地，否则零件悬空 ~10mm 开指，60N
+    # 穿透回弹直接把重件打飞 360mm（六策略同值的真因）。
+    in_bin = (abs(place["x"] - 0.5) <= bin_w / 2) and (abs(place["y"]) <= bin_d / 2)
+    place_surface_z = (t + 0.01) if in_bin else -0.01
 
     # 夹爪初始：目标正上方 0.45m，指间隙 = 目标宽 + 0.10（下降通道净空——
     # W2 第 19 轮实测：DART 接触 margin ~5mm 内即生效，指贴零件顶角 2.6mm 就会
@@ -286,10 +294,14 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     # （W2 第 11 轮教训：指长 0.12 下降后指底穿透箱底板 z=-0.023，接触全为指-箱底互撞）
     finger_len = 0.02
     finger_pz = -0.03
+    # V0.5 W4：夹持模式（script.params.grasp_control）；position = 关节位置伺服
+    grip_mode = str(((sim_ir.get("script") or {}).get("params") or {})
+                    .get("grasp_control", "force")).lower()
+    use_force = "true" if grip_mode != "position" else "false"
     fingers = GRIPPER_TEMPLATE.format(
         gx=target["x"], gy=target["y"], gz=gripper_z,
         half_open=half_open_v, lim=round(half_open_v - 0.001, 4),
-        finger_len=finger_len, finger_pz=finger_pz)
+        finger_len=finger_len, finger_pz=finger_pz, use_force=use_force)
 
     sensor = (sim_ir.get("sensors") or [{}])[0]
     pose = sensor.get("pose") or {"x": 0.5, "y": 0.0, "z": 0.85, "pitch": 90, "yaw": 0}
@@ -338,6 +350,8 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
         }
 
     return {
+        "placeSurfaceZ": round(place_surface_z, 4),
+        "gripMode": "position" if grip_mode == "position" else "force",
         "perception": perception_cfg,
         "graspNoise": (float(noise_xyz[0]), float(noise_xyz[1]), float(noise_xyz[2])),
         "graspForceN": grasp_force_n,

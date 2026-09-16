@@ -412,6 +412,27 @@ def _perceive_target(client: GzClient, bundle: dict, log) -> dict | None:
     return result
 
 
+def _descend_until(client: GzClient, part_name: str, stop_z: float,
+                   timeout_s: float = 25.0, vz: float = -0.04):
+    """低速闭环下降（V0.5 W4 释放弹飞根治核心）：vz=-0.04，按零件实时 z 停止。
+
+    位置分步/单步 _move_to 的硬停（0.25m/s→0 一步内 ~25g）已被探针矩阵证伪：
+    向下减速度 > μg（μ=3 ⇒ 3g）零件即从指间滑脱坠落，又被下降的夹爪撞飞。
+    0.04m/s 恒速 + 按实测 z 停止——急停减速度 ~4g 量级且接触压痕微小，
+    同时消除夹持偏移（零件在指间的高度随运输动态漂 ±13mm）对标称计算的依赖。
+    """
+    deadline = time.monotonic() + timeout_s
+    client.pub_twist(0, 0, vz)
+    last = None
+    while time.monotonic() < deadline:
+        time.sleep(0.06)
+        last = client.pose_of(part_name)
+        if last is not None and last[2] <= stop_z:
+            break
+    client.pub_twist(0, 0, HOVER_VZ)
+    return last
+
+
 def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
     """感知（V0.5 W3 enabled 时）→ home→下降→闭合→提升→平移→放置→张开。
 
@@ -509,14 +530,23 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
             metrics["placed_height_m"] = round(final[2], 4)
         log.info("descend failed, fast-finish cycle", aim=(round(aim_x, 4), round(aim_y, 4)))
         return metrics
-    # 3) 力控渐进夹紧：use_force_commands=true 时 cmd 是力值（N）——
-    #    W1-W2 曾误发位置值 0.027 当力（≈0.027N 零力，滑脱根因）。力来自 IR grasp_force_n。
+    # 3) 渐进夹紧。force 模式：cmd=力值（N），力来自 IR grasp_force_n
+    #    （W1-W2 曾误发位置值 0.027 当力（≈0.027N 零力，滑脱根因））。
+    #    position 模式（V0.5 W4）：cmd=关节位置（m），从 half_open 斜坡到闭合位
+    #    gripJointPos——位置伺服夹持，接触力=伺服刚度×位置误差，无 60N 定值压深。
     time.sleep(0.6)
     client.contacts.reset()  # collision_count 计数窗口：闭合→提升
     force = bundle.get("graspForceN", 40.0)
-    for frac in (0.25, 0.5, 0.75, 1.0):
-        client.pub_grip(force * frac)
-        time.sleep(0.7)
+    half_open = float(bundle.get("halfOpen", 0.05))
+    grip_closed = float(bundle.get("gripJointPos", half_open * 0.6))
+    if bundle.get("gripMode") == "position":
+        for frac in (0.25, 0.5, 0.75, 1.0):
+            client.pub_grip(half_open + frac * (grip_closed - half_open))
+            time.sleep(0.7)
+    else:
+        for frac in (0.25, 0.5, 0.75, 1.0):
+            client.pub_grip(force * frac)
+            time.sleep(0.7)
     time.sleep(1.0)
     # 注：保持力降档（60→15N 减接触储能）实测两难——弹飞仅部分缓解且降档扰动
     # 令部分零件脱夹（pick_success 回归）。全程保持抓取力，弹飞残余归 V0.4
@@ -535,23 +565,88 @@ def run_pick_sequence(client: GzClient, bundle: dict, log) -> dict[str, float]:
     # ~370mm 的真因，非"落体弹跳"）。修复：零件底 ~2mm 干涉触地（地面支撑）
     # + 小力渐进脱接触（-1.5/-3/-6N 缓脱后指已离零件，才 -15N 全开）。
     part_half_h = 0.3 * float(target.get("size_m") or 0.04)
-    release_z = round(part_half_h + 0.002 + grasp_offset, 4)
+    # W4 探针：释放干涉 2mm→8mm（零挤压假设验证——360mm 弹飞与力级/泄压时长
+    # 全无关，疑似 2mm 干涉把零件压入地面+指夹中部所致的侧向挤出）
+    release_z = round(part_half_h + 0.008 + grasp_offset, 4)
     _move_to(client, (place["x"], place["y"], start_z))
-    _move_to(client, (place["x"], place["y"], release_z))
-    # 泄压（0.1s 级轨迹诊断实锤的第三段根因）：闭合 60N 持续压在接触内积累
-    # penetration 势能，任何开力（哪怕 -1.5N）松指瞬间 DART 将其弹出 2.4m/s
-    # （0.1s 内位移 236mm，零件已触地仍被弹飞）。先发零力让势能对称缓慢释放
-    # （零件由地面支撑+指对称轻接触稳定），再小力渐进张开。
-    client.pub_grip(0.0)
-    time.sleep(1.2)
-    for f in (-1.5, -3.0, -6.0):
-        client.pub_grip(f)
+    # W4 闭环触地释放（弹飞根治）：按零件实时位姿分步下降到零件底≈触地
+    # （half_h+3mm 内），不按标称 release_z 硬压——刚性夹持下硬压把零件压入
+    # 地面（地面接触储能），开指瞬间侧向射出 ~350mm（与夹持力 25/60N、泄压
+    # 1.2/3.0s、干涉 2/8mm 全无关——W4 探针矩阵实证；压入 10mm 时重件射出
+    # 与指开合同向反向）。触地后零件由地面支撑，开指仅 ≤3mm 自由落差。
+    # 两段式释放下降（按真实支撑面触地）：①粗移动单步到零件底 25mm 悬空
+    # （硬停发生在高空，向下滑脱被余量吸收）；②低速闭环按零件实测 z 降到
+    # 真实静止高度 +2mm（placeSurfaceZ 来自场景真值——地面 plane 在 z=-0.01，
+    # 曾按 0 计算致零件悬空 10mm 开指，60N 穿透回弹打飞重件 360mm）。
+    surface_z = float(bundle.get("placeSurfaceZ", -0.01))
+    rest_z = surface_z + part_half_h
+    cur = client.pose_of(tgt_name)
+    if cur is not None:
+        coarse_gz = round(start_z - (cur[2] - rest_z - 0.025), 4)
+        coarse_gz = max(release_z, min(start_z, coarse_gz))
+        _move_to(client, (place["x"], place["y"], coarse_gz))
+    touchdown = _descend_until(client, tgt_name, rest_z + 0.008)
+    touchdown = _descend_until(client, tgt_name, rest_z + 0.002,
+                               timeout_s=15.0, vz=-0.02) or touchdown
+    log.info("touchdown", part=touchdown, rest_z=round(rest_z, 4),
+             gripper=client.pose_of("gripper"))
+    # 释放。force 模式（泄压渐进开，0.1s 级轨迹诊断实锤的第三段根因缓解）：
+    #   闭合 60N 持续压在接触内积累 penetration 势能，任何开力（哪怕 -1.5N）
+    #   松指瞬间 DART 将其弹出 2.4m/s——先零力泄压再小力渐进张开。重零件残余
+    #   弹飞（~370mm）= DART 力控+突释数值特性（V0.3 终局保留项，本 W4 根治）。
+    # position 模式（V0.5 W4）：cmd 斜坡回 half_open——位置伺服回程无累积法向
+    #   力突释，接触分离由伺服位移平滑驱动（无泄压两难）。
+    if bundle.get("gripMode") == "position":
+        for frac in (0.33, 0.66, 1.0):
+            client.pub_grip(grip_closed + frac * (half_open - grip_closed))
+            time.sleep(0.6)
         time.sleep(0.5)
-    time.sleep(0.5)  # 缓脱后零件已由地面支撑、指-零件接触分离
-    client.pub_grip(-15.0)
-    time.sleep(0.8)
-    client.pub_grip(0.0)
-    _move_to(client, (place["x"], place["y"], start_z))
+    else:
+        # W4 泄压时长探针定值：0 力 3.0s——接触弹簧完全卸载（N→0 ⇒ 摩擦→0）
+        # 后再开指，开指摩擦冲量 ∫μN dt 最小（1.2s 时残余法向力仍在拖拽，重件 360mm）
+        # 释放段全程零件轨迹采样（W4 诊断：两个不同种子同落 0.8405——点采样定位不了击飞时刻）
+        release_traj: list[tuple] = []
+
+        def _sample_traj(duration_s: float, step_s: float = 0.2) -> None:
+            n_steps = int(duration_s / step_s)
+            for _ in range(n_steps):
+                time.sleep(step_s)
+                p = client.pose_of(tgt_name)
+                if p is not None:
+                    release_traj.append((round(p[0], 3), round(p[1], 3), round(p[2], 3)))
+
+        # 准静态卸载（W4 终版）：力 60→0 一跳时穿透储能瞬间释放（回弹冲量
+        # ∝ 储能，与质量无关——小轻件被甩 508mm；地面摩擦 0.5mg 对 0.1kg 件
+        # 仅 0.5N 拦不住）。渐降让接触准静态松弛（指随零件回弹连续跟进），
+        # 无突释冲量。总时长 ≈ 原一跳+3s 等待。
+        for f in (45.0, 30.0, 18.0, 10.0, 5.0, 2.0, 0.0):
+            client.pub_grip(f)
+            _sample_traj(0.5)
+        for f in (-0.75, -1.5, -3.0, -6.0):
+            client.pub_grip(f)
+            _sample_traj(0.8)
+        _sample_traj(0.5)  # 缓脱后零件已由地面支撑、指-零件接触分离
+        client.pub_grip(-15.0)
+        _sample_traj(0.8)
+        client.pub_grip(0.0)
+        _sample_traj(0.5)
+        log.info("grip fully open", part=client.pose_of(tgt_name),
+                 traj=release_traj)
+    # 回退前对准：零件实际落点常偏心（感知/夹持残余 ±20mm），全张指（半开 0.09）
+    # 内缘可与零件缘重叠——先横移使基座正对零件（两侧间隙最大化 ~25mm），
+    # 再垂直上升（W4 重件 6 策略同值 360mm 的真因：上升时指扫零件顶）
+    rested = client.pose_of(tgt_name)
+    gp = client.pose_of("gripper")
+    if rested is not None and gp is not None:
+        _move_to(client, (rested[0], rested[1], gp[2]))  # 纯 XY 居中（保持释放高度）
+        log.info("centered over part", part=client.pose_of(tgt_name),
+                 gripper=client.pose_of("gripper"))
+        _move_to(client, (rested[0], rested[1], start_z))
+        log.info("retreated", part=client.pose_of(tgt_name),
+                 gripper=client.pose_of("gripper"))
+    else:
+        _move_to(client, (place["x"], place["y"], start_z))
+        log.info("retreated (no part)", part=client.pose_of(tgt_name))
     t1 = client.sim_time()
 
     final = client.pose_of(tgt_name)
