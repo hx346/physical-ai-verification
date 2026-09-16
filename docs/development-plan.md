@@ -350,7 +350,9 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 - [x] 断点续跑：批次中断后重启，已完成 run 不重跑（验证：复用计数 = 已完成数）
   **（2026-09-16 达成：父任务容器中断→recover 重入队→重跑 reusedRuns=6/6 零重跑，
   纯收割 wall 0.1s，E00253；sim-worker 中断场景子 job 亦复用，未完成 run 重跑）**
-- [ ] 对照实验：同一实验两组相机配置对照，报告并列呈现（demo 第二幕平台化）
+- [x] 对照实验：同一实验两组相机配置对照，报告并列呈现（demo 第二幕平台化）
+  **（2026-09-16 达成：POST /api/experiments/comparisons 2 臂 API 实测 E00256 + demo 5.5
+  三臂 E00279 + 报告 System Configuration Comparison 章节 + 前端批次/对照双 Tab 页）**
 - [ ] 感知抓取：深度定位误差实测入 evidence；depth_noise 敏感性来自真实感知链
 - [ ] 回归：demo 全幕 + 单次仿真 + 批量实验不回归；87 同步完成
 
@@ -364,6 +366,15 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 | 感知链与脚本序列耦合过深 | 中 | 定位模块独立（输入深度图 → 输出位姿假设），序列只消费接口 |
 
 ## V0.5 进展记录
+
+- 2026-09-16 **W2 对照实验平台化完成**：ExperimentLaunchService 抽取共享投递（同 seed 配对
+  采样）；ComparisonController（创建/查询/列表，全臂完成自动摄取 evidence type=comparison）；
+  Flyway V7（experiment_comparison 表 + evidence CHECK 扩展 comparison）；报告对照章节
+  （指标并列 + 差值 + 假设）；批次列表 API；前端实验页双 Tab 重构；demo 5.5 幕（CMP=1）。
+  实测：2 臂解析对照（RGB-D 全面更优，rate 0.0743 vs 0.0057、accP95 18.97 vs 25.14mm）；
+  demo 三臂对照。诚实边界：仿真臂模板不随 systemConfig 变化（感知链 W3），对照差异≈0 属
+  映射边界——已入假设清单。前端页 vue-tsc/vite 构建通过（既有 VerificationMatrixView
+  simulationVerdict 类型告警为 W3 遗留，非本次引入）。
 
 - 2026-09-16 **W1 批次编排 DAG 化完成（W1.1-W1.4 全落地）**：
   - **两级 DAG**：experiment 父任务（`requires=orchestrator`，普通 worker）LHS 采样 → 展开

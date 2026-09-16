@@ -7,6 +7,7 @@
 
 ### Added
 
+- **V0.5 W2 对照实验平台化（2026-09-16）**：`POST /api/experiments/comparisons`（同参数同 seed × 2-5 臂配对采样，差异归因系统配置）→ 全臂完成自动摄取 evidence（type=comparison，Flyway V7：experiment_comparison 表 + evidence 类型扩展）；对照载荷逐指标并列（解析/仿真口径统一）+ 相对基准差值与更优判定 + 假设清单（仿真臂模板不随系统配置变化如实标注）；报告 v2 新增 System Configuration Comparison 章节；GET /api/experiments/batches 批次列表（含进行中进度）；前端实验页重构为批次/对照双 Tab（发起/列表/进度/下钻）；demo 5.5 幕 CMP=1 门控（三臂对照 E00279）
 - **V0.5 W1 批次编排 DAG 化（2026-09-16）**：experiment backend=simulator 展开为两级 DAG——
   父任务（requires=orchestrator，普通 worker）LHS 采样 → N 个 simulation 子 job
   （幂等键 `{parent}:run:{i}`，requires=gz）多 sim-worker SKIP LOCKED 并行认领 → 父任务

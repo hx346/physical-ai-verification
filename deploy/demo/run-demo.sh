@@ -113,6 +113,33 @@ print(f\"  0.95m 对照：success_mean={agg['success_rate_mean']:.4f} acc_p95_me
 print('  （对照第 4 步的 0.65m 数值——相机位姿是可控优化变量）')
 "
 
+# 第五幕半（可选，V0.5 W2）：对照实验平台化——第 4/5 步手工流程一次 API 完成
+# （同 seed 配对采样：run i 各臂参数与噪声实例相同，差异归因系统配置）
+log "5.5 对照实验平台化（可选：CMP=1 执行；RGB-D vs RGB-D-高位 vs RGB 三臂并列）"
+if [ "${CMP:-0}" = "1" ]; then
+  CMP_KEY=$(post "/api/experiments/comparisons" "{\"projectId\":\"$PROJECT\",\"systemConfigIds\":[\"$SYS_RGBD\",\"$SYS_HIGH\",\"$SYS_RGB\"],\"n\":1000,\"method\":\"lhs\",\"backend\":\"analytic\",\"label\":\"demo 三臂对照\"}" | jq_get "d['data']['comparisonKey']")
+  echo "  comparisonKey=$CMP_KEY（解析臂秒级完成）…"
+  for i in $(seq 1 30); do
+    CMP_OUT=$(curl -s "$BASE/api/experiments/comparisons/$CMP_KEY" -H "$AUTH")
+    CMP_S=$(echo "$CMP_OUT" | jq_get "d['data']['status']")
+    [ "$CMP_S" = "SUCCEEDED" ] && break
+    sleep 2
+  done
+  echo "$CMP_OUT" | "$PY" -c "
+import sys, json
+d = json.load(sys.stdin)['data']
+c = d.get('comparison') or {}
+print('  状态:', d['status'], ' evidenceId:', d.get('evidenceId'))
+for arm in c.get('arms', []):
+    print(f\"  {arm['systemConfigId']}: rate={arm.get('success_rate_mean'):.4f} accP95={arm.get('accuracy_p95_mean_mm'):.2f}mm\")
+for dl in c.get('deltas', []):
+    better = {k.split('__')[0]: v for k, v in dl.items() if k.endswith('__better') and v == dl['systemConfigId']}
+    print(f\"  Δ {dl['systemConfigId']} vs {dl['vs']}: 更优指标 {len(better)}/3\")
+"
+else
+  echo "  跳过（CMP=1 执行：三臂对照并列 + 差值 + 假设入 evidence）"
+fi
+
 log "6. 报告（含实验证据节，前 24 行）"
 curl -s "$BASE/api/verification/runs/$RUN2_ID/report" -H "$AUTH" | head -24
 

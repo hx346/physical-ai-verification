@@ -116,7 +116,89 @@ public class ReportService {
         md.append("\n---\n\n> 声明：解析式结论基于显式假设模型（未校准），仿真/实验/真机证据在后续版本补充；")
           .append("每个判定可经 evidence id 与 traceId 追溯输入指纹与内核版本。\n");
         appendExperimentSection(md, projectId);
+        appendComparisonSection(md, projectId);
         return md.toString();
+    }
+
+    /** 报告 v2（V0.5 W2）：项目最新对照实验——逐指标并列 + 相对基准差值 + 假设。 */
+    @SuppressWarnings("unchecked")
+    private void appendComparisonSection(StringBuilder md, String projectId) {
+        if (projectId == null) {
+            return;
+        }
+        var rows = jdbcTemplate.query(
+                "SELECT ir FROM evidence WHERE type='comparison' AND ir->>'projectId'=? "
+                        + "ORDER BY created_at DESC LIMIT 1",
+                (rs, i) -> rs.getString("ir"), projectId);
+        if (rows.isEmpty()) {
+            return;
+        }
+        try {
+            Map<String, Object> ir = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(rows.getFirst(), Map.class);
+            Map<String, Object> comparison = (Map<String, Object>) ir.get("comparison");
+            if (comparison == null) {
+                return;
+            }
+            md.append("\n## System Configuration Comparison（V0.5 W2）\n\n");
+            md.append("- 对照：`").append(orDash(ir.get("comparisonKey"))).append("`")
+              .append("（backend=").append(orDash(ir.get("backend"))).append("）\n\n");
+            List<Map<String, Object>> arms = (List<Map<String, Object>>) comparison.get("arms");
+            Map<String, String> labels = (Map<String, String>) comparison.get("metricLabels");
+            List<String> metricKeys = (List<String>) comparison.get("metricKeys");
+            if (arms == null || arms.isEmpty() || metricKeys == null) {
+                return;
+            }
+            // 指标并列表：行=指标，列=各臂（首臂为基准）
+            md.append("| 指标 |");
+            for (Map<String, Object> arm : arms) {
+                md.append(" ").append(arm.get("systemConfigId")).append(" |");
+            }
+            md.append("\n|---|");
+            for (int i = 0; i < arms.size(); i++) {
+                md.append("---:|");
+            }
+            md.append('\n');
+            for (String key : metricKeys) {
+                md.append("| ").append(labels == null ? key : labels.getOrDefault(key, key)).append(" |");
+                for (Map<String, Object> arm : arms) {
+                    md.append(' ').append(fmt(arm.get(key))).append(" |");
+                }
+                md.append('\n');
+            }
+            md.append("| samples |");
+            for (Map<String, Object> arm : arms) {
+                md.append(' ').append(fmt(arm.get("samples"))).append(" |");
+            }
+            md.append('\n');
+
+            List<Map<String, Object>> deltas = (List<Map<String, Object>>) comparison.get("deltas");
+            if (deltas != null && !deltas.isEmpty()) {
+                md.append("\n差值（相对基准臂）：\n\n| 臂 | vs | 指标 | Δ | 更优 |\n|---|---|---|---:|---|\n");
+                for (Map<String, Object> d : deltas) {
+                    for (String key : metricKeys) {
+                        if (d.containsKey(key)) {
+                            md.append("| ").append(d.get("systemConfigId"))
+                              .append(" | ").append(d.get("vs"))
+                              .append(" | ").append(labels == null ? key : labels.getOrDefault(key, key))
+                              .append(" | ").append(fmt(d.get(key)))
+                              .append(" | ").append(orDash(d.get(key + "__better"))).append(" |\n");
+                        }
+                    }
+                }
+            }
+
+            List<Map<String, String>> assumptions = (List<Map<String, String>>) comparison.get("assumptions");
+            if (assumptions != null && !assumptions.isEmpty()) {
+                md.append("\n对照假设：\n");
+                for (Map<String, String> a : assumptions) {
+                    md.append("- [").append(a.get("provenance")).append("] ")
+                      .append(a.get("name")).append("：").append(a.get("note")).append('\n');
+                }
+            }
+        } catch (Exception ignored) {
+            // 对照证据损坏时报告主体仍可输出
+        }
     }
 
     /** 报告 v2：项目最新实验证据（聚合 + Sobol 敏感性排名）。 */
