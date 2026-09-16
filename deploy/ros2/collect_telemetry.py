@@ -19,6 +19,12 @@ realtest/gap.py 的 KNOWN_METRICS（picking_success_rate / position_error_mm / c
 Jazzy/Humble API 编写）；纯函数逻辑（CSV 行派生）带 --self-test 自验。
 首次接入真机需联调话题名与消息格式。
 
+2026-09-16 真实 ROS 2 humble 容器联调通过（rv_smoke_talker 冒烟 harness）：
+订阅/派生/落盘/边界语义（布尔/缺字段/非法 JSON）全部验证；修复 SIGINT 二次
+shutdown RCLError。已知边界：启动后 ~1s DDS 发现期内若上游恰好发布，首条消息
+可能丢失（volatile 持久性不重放；机器人持续发布场景影响可忽略，追求不丢则
+上游需 transient_local）。
+
 用法（ROS 2 环境内）：
   python3 collect_telemetry.py --output telemetry.csv
   ros2 run --prefix 'python3' ... （或 source 后直接 ros2 run 包形式接入）
@@ -152,7 +158,12 @@ def main(argv: list[str] | None = None) -> int:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # 信号可能已触发 context 关闭（rclpy 默认 signal handler），二次 shutdown
+        # 抛 RCLError——真 ROS humble 联调实测（2026-09-16），吞掉保证干净退出
+        try:
+            rclpy.shutdown()
+        except Exception:  # noqa: BLE001 — 关闭路径兜底，数据已行缓冲落盘
+            pass
     return 0
 
 
