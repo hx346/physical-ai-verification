@@ -23,9 +23,11 @@ def build_messages(count: int) -> list[str]:
     msgs = []
     for i in range(count):
         kind = i % 4
-        if kind == 0:  # 正常：三字段齐
+        if kind == 0:  # 正常：五字段齐（V0.8 W1 含 perception_error_mm/latency_ms）
             msgs.append(json.dumps({"pick_success": 1, "cycle_time_s": 6.2 + i * 0.1,
-                                    "position_error_mm": 2.4 + i * 0.05}))
+                                    "position_error_mm": 2.4 + i * 0.05,
+                                    "perception_error_mm": 1.1 + 0.02 * i,
+                                    "latency_ms": 35.0 + i}))
         elif kind == 1:  # 布尔 pick_success（应转 1/0）
             msgs.append(json.dumps({"pick_success": True, "cycle_time_s": 7.1}))
         elif kind == 2:  # 缺字段（只出 cycle_time 行）

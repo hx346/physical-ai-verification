@@ -187,12 +187,14 @@ GRIPPER_TEMPLATE = """    <model name="gripper">
       <!-- 关节控制（model 级）：/model/gripper/finger_*_joint/cmd，gz.msgs.Double。
            V0.5 W4 双模式：use_force_commands=true（cmd=力 N，W1-W3 定型）/
            false（cmd=关节位置 m，位置伺服夹持——释放无累积法向力突释，弹飞根治候选） -->
-      <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+      <plugin filename="gz-sim-joint-position-controller-system"
+              name="gz::sim::systems::JointPositionController">
         <joint_name>finger_left_joint</joint_name>
         <use_force_commands>{use_force}</use_force_commands>
         <topic>/model/gripper/finger_left_joint/cmd</topic>
       </plugin>
-      <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+      <plugin filename="gz-sim-joint-position-controller-system"
+              name="gz::sim::systems::JointPositionController">
         <joint_name>finger_right_joint</joint_name>
         <use_force_commands>{use_force}</use_force_commands>
         <topic>/model/gripper/finger_right_joint/cmd</topic>

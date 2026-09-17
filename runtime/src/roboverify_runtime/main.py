@@ -147,10 +147,14 @@ def realtest_gap(payload: GapRequest) -> dict:
     real = summarize_telemetry(payload.sessionId)
     if not real:
         raise HTTPException(status_code=404, detail={"error": "session 无遥测数据"})
-    # 实验聚合键 → gap 指标键映射（success_rate_mean ↔ picking_success_rate）
+    # 实验聚合键 → gap 指标键映射（success_rate_mean ↔ picking_success_rate）。
+    # V0.8 W1 补 cycle_time_s/perception_error_mm——真机采集器同名指标自动对上
+    # （W3 起仿真聚合含 perception_error_mm_mean）；sim 侧没有的键 → no_sim_counterpart
     sim = {
         "picking_success_rate": payload.simSummary.get("success_rate_mean"),
         "position_error_mm": payload.simSummary.get("accuracy_p95_mean_mm"),
+        "cycle_time_s": payload.simSummary.get("cycle_time_s_mean"),
+        "perception_error_mm": payload.simSummary.get("perception_error_mm_mean"),
     }
     return {"sessionId": payload.sessionId, "real": real, "gap": gap_report(real, sim)}
 
