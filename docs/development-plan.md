@@ -599,3 +599,23 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
     全通；sim-worker ×2 已换新镜像。
   - 后置串行队列：V10 存量取证回填 → 报告 v3（Failure 章节 + Release Decision 摘要）→
     Gate 1 框架；W3 可选 rosbag 回放。
+
+- 2026-09-17 **收尾四项 + 串行队列完成（commit 92193e0；dev 已推远端；87 已同步验证）**：
+  - **①Track D 回归双证**：(a) SDF 位级 A/B——旧版（986810a^）vs 新版 scene_builder 同输入
+    五场景（纯脚本/感知链/噪声注入/位置控制/env-bin 旧路径）SDF 逐位一致 + bundle 键零差异；
+    (b) n=6 仿真批次（exp:…:1a0ad386864）：**pick 5/6 与 W4 基线完全一致**，放置 7-63mm
+    （W4 包络内），唯一失败 run:1 μ=0.18 = 已回填的 transport_slip_low_mu 已知物理失败
+    （确定性复现非回归）。**判定：无退化。**
+  - **②V10 存量回填**：六条取证入库（W4 三重真因×3 / W2 接触失效证伪 / W3 解析高估 /
+    μ 滑脱基线），平台级归属（project_id NULL），报告 Failure 章节以"平台库"并列呈现。
+  - **③报告 v3**：Failure Records 章节（severity 排序四元组）+ Release Decision Summary
+    （PASS/FAIL/UNKNOWN 计数 + FAIL→不建议放行 / UNKNOWN→补证据 的显式结论规则；
+    放行决策永远由评审人做）。
+  - **④V11 Gate 1 框架**：gate1_case/gate1_finding 表 + 案例录入/判定 upsert/recall 报表
+    API；语义匹配由评审人记录（框架不自动匹配不编造）；空态 PENDING 不出 STOP 结论。
+    本地冒烟 caseId=1 recall=1.0 PASS。
+  - **87 同步**：4 镜像（backend/runtime/frontend/sim-worker，1119MB）save|gzip|scp|load；
+    V9/V10/V11 自动迁移 success；回填 6 条；Gate1 PENDING 空态；报告 v3 三新章节 + Gap
+    端点（simSource=experiment:simulator 键归一在 87 真实数据上生效）；前端 200。
+  - **W3 rosbag 不做**（决策：无真实 rosbag 素材，回放框架与真机接入自然捆绑，避免空转）。
+  - **前端浏览器人工过一遍**：留给用户（无浏览器自动化工具；路由/构建/API 均已静态验证）。
