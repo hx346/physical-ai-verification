@@ -124,6 +124,7 @@ interface SimEvidence {
     adapter?: string
     metrics?: Record<string, number>
     artifacts?: { name: string; store: string; key: string }[]
+    simulationVerdict?: { status?: string; detail?: string; reason?: string }
   }
 }
 const simEvidences = ref<SimEvidence[]>([])
@@ -208,7 +209,7 @@ function statusColor(status: Item['status']): string {
 }
 
 // W3 仿真判定链：SIM_PASS/SIM_FAIL/SIM_UNKNOWN（provenance=simulation，与解析维度并列）
-function simVerdictColor(status: string): string {
+function simVerdictColor(status: string | undefined): string {
   if (status === 'SIM_PASS') return 'green'
   if (status === 'SIM_FAIL') return 'red'
   return 'default'
