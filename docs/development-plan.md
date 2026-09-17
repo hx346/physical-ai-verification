@@ -473,3 +473,98 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
     观察一致）。
   - 4-worker 批次 run wall max 159.8s（均值 72s）——负载竞争下个别 run RTF 退化，
     批次不受影响（兜底时限语义保护）。
+
+# 12. V0.8 — Real Robot Integration（W2 收尾，09-17 → 09-24）
+
+> W1 已完成（commit 7e47212）：采集器 v1 / 幂等导入 / 会话 API / E2E 演练（REHEARSAL_OK）。
+> W2 目标：真机数据在前端与报告**可见**。真机 ROS 主机不可接不阻塞 W2——
+> 用 e2e_rehearsal 演练数据 / 手工导入即可开发与验证（真机接入仅剩"换话题名"，README 三步）。
+
+## W2 任务拆解
+
+1. **前端真机测试页**（frontend，Track A）
+   - 会话列表：GET /api/realtest/sessions，列（会话/项目/runs/指标数/导入时间/external_key/duplicate 标记）
+   - 会话详情 Drawer：summary 聚合（指标/mean/P50/P95/样本数，percentile_cont 同形数据）
+   - Gap 视图：sim vs real 指标对照 Tab；**no_sim_counterpart 分支无 verdict 键**——如实渲染"无仿真对照"，禁止编造
+   - 模型版本徽标：关联校准 model_version（DRAFT→ACTIVE）状态
+2. **报告 Gap 章节**（backend，Track B）
+   - report v2 → 新增 Sim2Real Gap 章节：指标对照表（metric/sim 值/real 值/ratio/verdict）
+   - 项目无真机会话时章节显式标注"无真机对照"，**不省略章节**（诚实边界）
+   - latency_ms gap 如实标 no_sim_counterpart（仿真无对应指标，W1 已定语义）
+3. （可选 W3）rosbag 回放导入——时间盒 2 天，超时砍
+
+## W2 DoD
+
+- [ ] 前端真机页：列表→详情→Gap 全链路可操作；空态与 no_sim_counterpart 分支渲染正确
+- [ ] 报告含 Gap 章节：有真机会话项目可见对照表；无真机项目显式标注
+- [ ] E2E：e2e_rehearsal 导入的会话在前端页与报告中均可见（本地栈验证）
+- [ ] 87 同步验证（backend+frontend 两镜像，V8 已在线自动迁移无需新迁移）
+
+## W2 风险
+
+| 风险 | 等级 | 缓解 |
+|---|---|---|
+| springdoc 上游阻塞 OpenAPI 聚合 | 高 | 前端按现有 API client 模式手写，不等上游 |
+| 真机仍不可接 | 高 | W2 全部用演练数据开发验证；真机窗口随时插入，仅换话题名 |
+| 前端页与实验页双 Tab 模式冲突 | 低 | 复用实验页 Tab/Drawer 组件模式，不共享状态 |
+
+# 13. V0.9 — Evidence & Failure Intelligence（09-17 并行启动 → 10-15 窗口）
+
+> 产品路线 §44 修订版新增版本（2026-09-17 方案审查）。**无外部依赖**，与 V0.8 W2 并行。
+> 背景：V0.5 W2/W4 已产生高质量失败取证（六策略探针矩阵/确定性指纹破案/三重真因），
+> 目前仅存于进展记录与 commit message——护城河资产白白流失，本版本先抢救存量再建增量机制。
+
+## 任务拆解
+
+1. **Failure DB 最小落库**（backend，Track C）
+   - Flyway V9：`failure_record` 表（id/project_id 可空/failure_mode/failure_desc/root_cause/
+     correction/outcome/severity/source(sim|real|manual)/evidence_id 可空关联/trace JSONB/
+     detected_at/created_at）
+   - 幂等：`(source, external_key)` 部分唯一索引 WHERE external_key NOT NULL（手工录入不受约束，同 V8 模式）
+   - API：POST /api/failures（@Valid）、GET /api/failures?projectId=、GET /api/failures/{id}
+   - 边界入参出参一律 Map（Jackson3/Jackson2 双坑），JdbcTemplate，Controller 不注 DAO
+2. **存量取证回填**（Track C 后置，依赖 V9 表）
+   - 回填清单：①W4 三重真因（地面 z=-0.01 悬空开指/位置硬停滑脱/力一跳泄压）；②W2"DART 接触失效"证伪
+     （82 万接触条目实证，接触从未缺失）；③W3 解析 1:1 映射高估（0.60 vs 真实链 0.83）；④μ=0.18 滑腻件
+     运输滑脱（真实物理失败，确定复现保留）；⑤V0.3 W4 空中击飞归因不完整修正
+   - 形式：Flyway V10 seed INSERT（可追溯可回滚）优于散装脚本——实施时按此原则
+3. **报告 v3**（backend，Track C 后置）
+   - Failure 章节：失败模式列表+根因+修复+结局（按 severity 排序）
+   - **Release Decision 摘要**章节：需求判定汇总（PASS/FAIL/UNKNOWN 计数）+ 证据完备性 +
+     放行建议；**放行决策永远由人做，平台只给证据摘要**
+4. **场景模板参数化 v2**（runtime，Track D）
+   - scene_builder 单硬编码模板 → 参数化 Scenario 描述（JSON）：箱体几何/零件分布/相机位姿/
+     光照/支撑面真值（placeSurfaceZ 等）/override 全集
+   - Scenario 实例随 run 归档：sim-logs/ 同目录存 scenario JSON；复现 = 同 scenario JSON + 同 seed
+     （**已知 gz 非位级确定**——复现语义为参数逐位一致，非物理轨迹一致，如实标注）
+   - Scenario Registry v0：DB 表 or 对象存储+DB 索引，实施时按最小改动定
+5. **Gate 1 执行框架**（backend，素材到位即跑；素材未到位只交付框架空态可跑）
+   - 历史项目录入 → 批量判定 → recall 报表（Problem Recall ≥70% 判 STOP）
+
+## V0.9 DoD
+
+- [ ] failure_record CRUD+幂等可用（V9 迁移只走 Flyway，禁止手工 ALTER）
+- [ ] 存量 W2/W4 取证 5 类全部入库，GET /api/failures 可查
+- [ ] 报告 v3：Failure 章节 + Release Decision 摘要在 demo 项目报告可见
+- [ ] Scenario JSON 随 sim run 归档且同参数重建场景逐位一致（单测锁定）
+- [ ] Gate 1 框架链路通（录入→判定→recall 报表，无数据空态可跑）
+- [ ] 87 同步验证（backend/runtime/sim-worker 三镜像）
+
+## V0.9 风险
+
+| 风险 | 等级 | 缓解 |
+|---|---|---|
+| failure 表设计过度（拟人化 Failure Intelligence） | 中 | 只落 failure/root_cause/correction/outcome 四元组+溯源，不做知识图谱 |
+| 场景参数化改动破坏 W1-W4 已校准序列 | 高 | 参数化只重构生成路径不改数值；n=6 A/B 回归（放置 7.9-40mm 基线）必须通过 |
+| 与 V0.8 W2 并行的 backend 文件冲突 | 中 | Track B 只改报告服务，Track C 全新文件+迁移，唯一交集 V9/V10 迁移编号串行分配 |
+| Gate 1 素材持续缺位 | 高 | 框架先行，recall 数字明确标"待素材"，不伪造 |
+
+## 并行轨道安排（2026-09-17 启动）
+
+```text
+Track A（frontend）  V0.8 W2 真机测试页        —— 独立
+Track B（backend）   V0.8 W2 报告 Gap 章节      —— 独立（只动报告服务）
+Track C（backend+DB）V0.9 Failure DB（V9 迁移+API）—— 独立（全新文件）
+Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 sim_adapters）
+后置串行：回填 V10（依赖 C）→ 报告 v3（依赖 C+回填）→ Gate 1 框架
+```
