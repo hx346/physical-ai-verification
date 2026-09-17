@@ -222,22 +222,37 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
     import math
 
     env = environment or {}
-    bin_ = env.get("bin") or {"width_mm": 600, "height_mm": 300, "depth_mm": 400}
-    bin_w = bin_.get("width_mm", 600) / 1000.0
-    bin_d = bin_.get("height_mm", 300) / 1000.0
-    bin_h = 0.3
+    # V0.9 场景参数化 v2：scenario 块（simulation IR environment.scenario，schema 0.2.0）。
+    # 只参数化场景级自由度（箱体/零件分布/放置点），默认值 = 历史硬编码值——
+    # 不传 scenario 时与 v1 行为逐位一致（W4 回归基线不破坏）。夹爪/抓取几何是
+    # 校准过的系统配置（W2/W4），不作为场景参数，但全量回显进 scenario echo
+    # 供复现审计。env["bin"]（Environment IR 旧路径）保留，scenario 优先。
+    scenario = ((sim_ir.get("environment") or {}).get("scenario") or {})
+    sc_bin = scenario.get("bin") or {}
+    bin_ = env.get("bin") or {}
+    bin_w = float(sc_bin.get("width_mm", bin_.get("width_mm", 600))) / 1000.0
+    bin_d = float(sc_bin.get("depth_mm", bin_.get("height_mm", 300))) / 1000.0
+    bin_h = float(sc_bin.get("height_m", 0.3))
+    bin_cx = float(sc_bin.get("center_x", 0.5))
+    sc_spawn = scenario.get("part_spawn") or {}
+    spawn_y_halfspan = float(sc_spawn.get("y_halfspan", 0.03))
+    spawn_z_min = float(sc_spawn.get("z_min", 0.05))
+    spawn_z_span = float(sc_spawn.get("z_span", 0.12))
+    sc_place = scenario.get("place") or {}
+    place_x = float(sc_place.get("x", 1.2))
+    place_y = float(sc_place.get("y", 0.0))
 
     # 空心料箱（五面：底板 + 四壁）——W2 实心箱让零件生成在固体内部，
     # DART 深穿透弹射是"warmup 零件弹飞 0.7m"根因之一
-    t = 0.02  # 板厚
+    t = float(sc_bin.get("wall_thickness_mm", 20)) / 1000.0  # 板厚（默认 20mm）
     wx = bin_w / 2 - t / 2
     wy = bin_d / 2 - t / 2
     wall_z = round(t + bin_h / 2, 4)
     bin_sdf = BIN_TEMPLATE.format(
         bin_w=round(bin_w, 3), bin_d=round(bin_d, 3), bin_h=bin_h, t=t,
-        wall_xp=round(0.5 + wx, 4), wall_xn=round(0.5 - wx, 4),
+        wall_xp=round(bin_cx + wx, 4), wall_xn=round(bin_cx - wx, 4),
         wall_yp=round(wy, 4), wall_yn=round(-wy, 4), wall_z=wall_z,
-        inner_w=round(bin_w - 2 * t, 3), cx=0.5)
+        inner_w=round(bin_w - 2 * t, 3), cx=bin_cx)
 
     seed = (sim_ir.get("environment") or {}).get("seed", 42)
     overrides = (sim_ir.get("environment") or {}).get("overrides") or {}
@@ -254,10 +269,10 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
         # 生成边距按夹爪足印预算：半开(size/2+0.05) + 指 x 半厚 0.025——
         # 否则贴壁零件会让下降的指插进箱壁（W2 第 16 轮实测：指-壁重叠 19mm 卡死）
         clear = size_m / 2 + 0.075
-        x = round(0.5 + rng.uniform(-(bin_w / 2 - t - clear), bin_w / 2 - t - clear), 4)
-        # y 向收紧到 ±0.03：抓取序列沿 y 侧向下刀需箱内偏位空间（|y|+0.05 偏位 ≤ 0.09）
-        y = round(rng.uniform(-0.03, 0.03), 4)
-        z = round(0.05 + 0.12 * rng.random(), 4)
+        x = round(bin_cx + rng.uniform(-(bin_w / 2 - t - clear), bin_w / 2 - t - clear), 4)
+        # y 向收紧（默认 ±0.03）：抓取序列沿 y 侧向下刀需箱内偏位空间（|y|+0.05 偏位 ≤ 0.09）
+        y = round(rng.uniform(-spawn_y_halfspan, spawn_y_halfspan), 4)
+        z = round(spawn_z_min + spawn_z_span * rng.random(), 4)
         mass = round(overrides.get("part_mass_kg", rng.uniform(0.05, 0.8)), 3)
         s, sz_m = round(size_m, 4), round(size_m * 0.6, 4)
         parts.append(PART_TEMPLATE.format(
@@ -276,20 +291,20 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
         ))
         part_meta.append({"idx": i, "x": x, "y": y, "z": z, "size_m": round(size_m, 4)})
 
-    # 目标：最高零件（最上层，遮挡/堆叠干扰最小）；放置点：料箱旁空地
+    # 目标：最高零件（最上层，遮挡/堆叠干扰最小）；放置点：料箱旁空地（默认）
     target = max(part_meta, key=lambda p: p["z"])
-    place = {"x": 1.2, "y": 0.0, "z": 0.05}
+    place = {"x": place_x, "y": place_y, "z": 0.05}
     # 放置面支撑高度（V0.5 W4 弹飞根治的关键场景事实）：地面 plane 在 z=-0.01
-    # （非 0！），箱内底板顶 0.03——零件真实静止 z = 支撑面 + 半高。放置点在
+    # （非 0！），箱内底板顶 t+0.01——零件真实静止 z = 支撑面 + 半高。放置点在
     # 箱外空地 → -0.01。释放闭环按此触地，否则零件悬空 ~10mm 开指，60N
     # 穿透回弹直接把重件打飞 360mm（六策略同值的真因）。
-    in_bin = (abs(place["x"] - 0.5) <= bin_w / 2) and (abs(place["y"]) <= bin_d / 2)
+    in_bin = (abs(place["x"] - bin_cx) <= bin_w / 2) and (abs(place["y"]) <= bin_d / 2)
     place_surface_z = (t + 0.01) if in_bin else -0.01
 
     # 夹爪初始：目标正上方 0.45m，指间隙 = 目标宽 + 0.10（下降通道净空——
     # W2 第 19 轮实测：DART 接触 margin ~5mm 内即生效，指贴零件顶角 2.6mm 就会
     # 被接触力顶住无法下降；+0.10 让指离角点 2cm+，闭合时才侧向接触）
-    gap_open = target["size_m"] + 0.10
+    gap_open = target["size_m"] + 0.10  # gap_margin=0.10（W2 第 19 轮校准，系统配置非场景参数）
     gripper_z = 0.45
     half_open_v = round(gap_open / 2, 4)
     # 指长 0.02（约零件半高）：抓上半侧——指底高于支撑面，不插箱底/不撞堆下层
@@ -351,7 +366,33 @@ def build_scene_bundle(sim_ir: dict, environment: dict | None = None) -> dict:
             "workspace": default_workspace(0.5, bin_w, bin_d),
         }
 
+    # V0.9 场景参数化 v2：resolved scenario 全量回显——复现记录
+    # （同 scenario + 同 seed → SDF 逐位一致；gz 物理轨迹非位级确定已如实记录，
+    # 复现语义 = 参数逐位一致，非轨迹一致）。固定几何（夹爪/抓取/地面）是
+    # 系统配置与世界常量，一并回显供审计，但不随 scenario 参数化。
+    scenario_echo = {
+        "schema_version": "0.1.0",
+        "bin": {"width_mm": round(bin_w * 1000, 1), "depth_mm": round(bin_d * 1000, 1),
+                "height_m": bin_h, "wall_thickness_mm": round(t * 1000, 1),
+                "center_x": bin_cx},
+        "part_spawn": {"y_halfspan": spawn_y_halfspan,
+                       "z_min": spawn_z_min, "z_span": spawn_z_span},
+        "place": {"x": place_x, "y": place_y, "z": 0.05},
+        "ground_z": -0.01,
+        "place_surface_z": round(place_surface_z, 4),
+        "seed": seed,
+        "overrides": overrides,
+        "n_parts": n_parts,
+        "fixed_gripper": {"gripper_z": gripper_z, "gap_margin": 0.10,
+                          "finger_len": finger_len, "finger_pz": finger_pz,
+                          "grasp_offset_base": 0.027},
+        "camera": {"x": cam_x, "y": cam_y, "z": cam_z,
+                   "pitch": pose.get("pitch", 90), "yaw": pose.get("yaw", 0),
+                   "fov_deg": fov_deg},
+    }
+
     return {
+        "scenario": scenario_echo,
         "placeSurfaceZ": round(place_surface_z, 4),
         "gripMode": "position" if grip_mode == "position" else "force",
         "perception": perception_cfg,

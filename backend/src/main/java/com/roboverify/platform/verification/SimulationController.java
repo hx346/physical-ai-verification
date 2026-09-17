@@ -243,6 +243,12 @@ public class SimulationController {
     private ArrayNode archiveArtifacts(String jobKey, JsonNode result) {        ArrayNode artifacts = objectMapper.createArrayNode();
         putArtifact(artifacts, jobKey, "scene.sdf", result.path("sceneSdf").asText(""), "application/xml");
         putArtifact(artifacts, jobKey, "run.log", result.path("logExcerpt").asText(""), "text/plain");
+        // V0.9 场景参数化 v2：scenario 回显归档（复现记录：同 scenario+同 seed → 同 SDF；
+        // 旧 result 无此键，条件归档兼容）
+        if (result.path("scenario").isObject()) {
+            putArtifact(artifacts, jobKey, "scenario.json", result.path("scenario").toString(),
+                    "application/json");
+        }
         return artifacts;
     }
 

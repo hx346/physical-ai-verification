@@ -6,6 +6,7 @@ import time
 
 from ...logging_setup import get_logger
 from ...sim_adapters import get_adapter
+from ...sim_adapters.gz.scene_builder import build_scene_bundle
 from ..registry import handle
 
 log = get_logger("worker.handler.simulation")
@@ -20,7 +21,10 @@ def run(job) -> dict:
     if not sim_ir:
         raise ValueError("simulation job 缺少 simulation payload")
     adapter = get_adapter("gz")
-    scene = adapter.build_scene(sim_ir)
+    # V0.9 场景参数化 v2：直接构建 bundle（SDF + scenario 回显）——
+    # build_scene 只返回 SDF 字符串，scenario 需随 run 结果归档
+    bundle = build_scene_bundle(sim_ir)
+    scene = bundle["sdf"]
     t0 = time.monotonic()
     result = adapter.run(sim_ir, scene, float(sim_ir.get("timeout_s", DEFAULT_TIMEOUT_S)))
     wall_s = round(time.monotonic() - t0, 1)
@@ -37,4 +41,6 @@ def run(job) -> dict:
         "requestedMetrics": available,
         # V0.5 W1：DAG 批次收割单 run 耗时（批次 wall 曲线/DoD 吞吐核算）
         "wall_s": wall_s,
+        # V0.9 场景参数化 v2：scenario 回显随 run 归档（复现记录：同 scenario+同 seed → 同 SDF）
+        "scenario": bundle.get("scenario"),
     }
