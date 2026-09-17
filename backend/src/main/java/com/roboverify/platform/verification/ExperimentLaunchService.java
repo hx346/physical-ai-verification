@@ -41,20 +41,9 @@ public class ExperimentLaunchService {
     /** 投递一次实验（backend=simulator 时父任务 requires=orchestrator，子 job 由 DAG 展开）。 */
     public String launch(String projectId, String systemConfigId, Integer n, String method,
                          String backend) {
-        JsonNode system = irRepository.findSystem(systemConfigId);
-        JsonNode environment = irRepository.findEnvironment(projectId);
-
-        List<String> assetIds = new ArrayList<>();
-        system.path("components").forEach(c -> assetIds.add(c.path("assetId").asText()));
-        List<JsonNode> assets = irRepository.findAssets(assetIds);
-
         boolean simulator = "simulator".equalsIgnoreCase(backend);
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("projectId", projectId);
-        ObjectNode experiment = payload.putObject("experiment");
-        experiment.put("schemaVersion", "0.1.0");
-        experiment.put("id", simulator ? SIM_EXPERIMENT_ID : DEFAULT_EXPERIMENT_ID);
-        buildParameters(experiment);
+        ObjectNode payload = buildSimContext(projectId, systemConfigId, simulator);
+        ObjectNode experiment = (ObjectNode) payload.path("experiment");
         ObjectNode sampling = experiment.putObject("sampling");
         sampling.put("method", method == null ? "lhs" : method);
         // 仿真后端默认 50：单次 ~60s wall，50 次 ≈ 1h（DoD 下限）；解析后端默认 1000
@@ -64,18 +53,6 @@ public class ExperimentLaunchService {
         ObjectNode aggregation = experiment.putObject("aggregation");
         aggregation.put("metric", "picking_success_rate");
         aggregation.put("statistic", "success_rate");
-        if (simulator) {
-            // W4：LHS 采样 → N 次 headless gz；simulation 模板由引擎逐 run 注入
-            // 采样参数（object_size/friction/定位噪声）后执行
-            experiment.put("backend", "simulator");
-            experiment.set("simulation", buildSimulationTemplate());
-        }
-
-        payload.set("system", system);
-        if (environment != null) {
-            payload.set("environment", environment);
-        }
-        payload.set("assets", objectMapper.valueToTree(assets));
 
         // 短键：exp:项目前8:系统前8:时间戳（evidence.run_id 有长度限制）
         String jobKey = "exp:" + shortKey(projectId) + ":" + shortKey(systemConfigId)
@@ -86,6 +63,37 @@ public class ExperimentLaunchService {
         jobQueueService.enqueue(jobKey, "experiment", payload.toString(), MDC.get("traceId"),
                 simulator ? "orchestrator" : null, (short) 60);
         return jobKey;
+    }
+
+    /** 仿真上下文基座（experiment 与 V1.0 calibration 共用，单源防双实现漂移）：
+     *  system/environment/assets + experiment 节（parameters 恒有；simulator 加
+     *  backend/simulation 模板）。sampling/aggregation 由各调用方按语义补。 */
+    public ObjectNode buildSimContext(String projectId, String systemConfigId, boolean simulator) {
+        JsonNode system = irRepository.findSystem(systemConfigId);
+        JsonNode environment = irRepository.findEnvironment(projectId);
+
+        List<String> assetIds = new ArrayList<>();
+        system.path("components").forEach(c -> assetIds.add(c.path("assetId").asText()));
+        List<JsonNode> assets = irRepository.findAssets(assetIds);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("projectId", projectId);
+        ObjectNode experiment = payload.putObject("experiment");
+        experiment.put("schemaVersion", "0.1.0");
+        experiment.put("id", simulator ? SIM_EXPERIMENT_ID : DEFAULT_EXPERIMENT_ID);
+        buildParameters(experiment);
+        if (simulator) {
+            // W4：LHS 采样 → N 次 headless gz；simulation 模板由引擎逐 run 注入
+            // 采样参数（object_size/friction/定位噪声）后执行
+            experiment.put("backend", "simulator");
+            experiment.set("simulation", buildSimulationTemplate());
+        }
+        payload.set("system", system);
+        if (environment != null) {
+            payload.set("environment", environment);
+        }
+        payload.set("assets", objectMapper.valueToTree(assets));
+        return payload;
     }
 
     /** 仿真实验的单次运行模板：单件箱内抓取 + 感知闭环（V0.5 W3）。

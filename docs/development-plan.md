@@ -698,3 +698,23 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
 ## V1.0 进展记录
 
 - 2026-09-17 **启动**：§14 计划写入（五任务/DoD 八项/风险五条）；Track A 校准引擎 v1 首切面开工。
+
+- 2026-09-17 **Track A' 校准编排落地（DoD 第 2 项达成，本地栈 E2E 全绿）**：
+  - **runtime `worker/handlers/calibration.py`**：编排复用 experiment DAG 模式——网格点 ×
+    repeats 展开 simulation 子 job（幂等键 `{parent}:pt{p}:run{r}`，requires=gz 多 sim-worker
+    并行）→ 轮询收割（deadline 兜底/断点续跑复用）→ **逐点聚合**（每点=固定参数组合的
+    仿真分布，单 run 键→仿真聚合键族 pick_success_rate/position_error_mm_P95/
+    perception_error_mm_mean）→ 进程内 fit_multi_param。全失败点剔除不编造；缺格 fit 拒收。
+  - **backend `CalibrationController`**：POST /api/calibrations（paramGrid 恰 2 参数 ≥2 档
+    严格递增早失败 + telemetry→realObs：成功率 se=sqrt(p(1-p)/n)、P95 se 正态近似
+    2.11σ/√n **假设显式入 params.assumptions**、样本<5 指标不派生）→ job（requires=
+    orchestrator）；GET /{jobKey} 轮询 + **SUCCEEDED 首查摄取写 model_version DRAFT**
+    （payload 标记幂等，同 simulation 模式；params 含 jobKey 可追溯）。
+    `ExperimentLaunchService.buildSimContext` 抽取共享（experiment/calibration 单源防漂移）。
+  - **E2E 实测**（fake-cell 合成会话 625fee7d 12 run 做观测源——演示链路非真实校准结论）：
+    2×2 网格 × 2 run = 8 sim run 双 sim-worker wall 561s 8/8 完成；fit depth_noise=1.99
+    [1.76,2.17] / friction=0.567 [0.48,0.65]，identifiable=true、stdResiduals<1σ；
+    model_version sim_param_calibration DRAFT 落库（8e9c2176）；二次 GET 幂等同 id；
+    **launch 重构回归**：解析 experiment SUCCEEDED E00310（buildSimContext 抽取无破坏）。
+  - 验证：runtime pytest 50 passed + ruff clean；backend mvn test 27 passed BUILD SUCCESS；
+    三镜像重建栈 healthy。CI 已确认关闭（2026-09-15 0d84a11，触发器仅手动）。
