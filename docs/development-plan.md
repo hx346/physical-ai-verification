@@ -568,3 +568,34 @@ Track C（backend+DB）V0.9 Failure DB（V9 迁移+API）—— 独立（全新�
 Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 sim_adapters）
 后置串行：回填 V10（依赖 C）→ 报告 v3（依赖 C+回填）→ Gate 1 框架
 ```
+
+- 2026-09-17 **V0.8 W2 + V0.9 四轨并行首切面完成（Track A/B/C/D 全落地，commits abaf1a4/794e281/a933659/986810a）**：
+  - **Track A 前端真机页**（/realtest 路由+菜单）：会话列表 → 详情 Drawer（summary 聚合表 +
+    Gap 计算）→ Gap 表（verdict 三色 tag；no_sim_counterpart 如实渲染"无仿真对照"）；
+    模型版本 Tab（lifecycle 徽标 + 激活确认）。顺带修复存量 typecheck 3 错
+    （SimEvidence 接口缺 simulationVerdict 声明，e78e6e0）。
+  - **Track B Gap 服务端派生**：SimRealGapService 单一实现（报告与前端同源，防双实现漂移）。
+    **关键坑：三族指标键归一**——runtime gap 端点期望解析式聚合键（success_rate_mean/
+    accuracy_p95_mean_mm），仿真后端聚合是另一套（pick_success_rate/position_error_mm_P95），
+    单 run 指标又是一套（pick_success/position_error_mm）；不归一则成功率与定位精度
+    假性落 no_sim_counterpart。新端点 GET /api/realtest/sessions/{id}/gap；报告 v2.1
+    Sim2Real Gap 章节（无真机/无 sim/runtime 挂三分支显式标注，不省略章节）。
+    实测：sim 0.054 vs real 0.941 → -94.2% exceeds_20pct（旧数据如实呈现）。
+  - **Track C Failure DB**：V9 迁移（failure_record：四元组+severity/source CHECK+trace JSONB+
+    evidence 关联+external_key 部分唯一索引同 V8 模式）；POST/GET /api/failures，
+    幂等实测 duplicate=true。栈上冒烟记录 failure-smoke-1（id=1）留档。
+  - **Track D 场景参数化 v2**：simulation schema 0.1.0→0.2.0（enum 双版本兼容，新增
+    environment.scenario）；scene_builder 只参数化场景级（bin/part_spawn/place），缺省值=
+    历史硬编码值逐位一致；**校准过的夹爪/抓取几何不参数化但全量回显**（fixed_gripper）；
+    scenario JSON 随 run 归档 sim-logs/{jobKey}/scenario.json（复现语义=参数逐位一致，
+    gz 非位级确定已如实标注）；5 单测（确定性/默认回显/箱内放置翻转 placeSurfaceZ=0.03/
+    抓取几何免疫 scenario/旧 env["bin"] 路径兼容且 scenario 优先）。
+  - **顺手抓获存量缺陷 2 个**：①ReportServiceTest 归档断言带前导斜杠 key——V0.3 W3 修
+    key 当天 CI 恰好关闭，测试烂了无人知（Dockerfile -DskipTests 掩盖，本地 mvn test 才
+    暴露）；②前端接口声明脱节。**教训：CI 关闭期间每个 W 收尾必须本地 mvn test +
+    vue-tsc --noEmit 各跑一次。**
+  - 验证记录：backend mvn test 全绿；runtime pytest 40 passed + ruff clean + schema
+    loader 过；5 镜像重建栈 healthy；V9 Flyway 自动迁移；Failure/Gap/报告/前端四路冒烟
+    全通；sim-worker ×2 已换新镜像。
+  - 后置串行队列：V10 存量取证回填 → 报告 v3（Failure 章节 + Release Decision 摘要）→
+    Gate 1 框架；W3 可选 rosbag 回放。
