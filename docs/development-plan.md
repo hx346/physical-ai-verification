@@ -495,10 +495,10 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 
 ## W2 DoD
 
-- [ ] 前端真机页：列表→详情→Gap 全链路可操作；空态与 no_sim_counterpart 分支渲染正确
-- [ ] 报告含 Gap 章节：有真机会话项目可见对照表；无真机项目显式标注
-- [ ] E2E：e2e_rehearsal 导入的会话在前端页与报告中均可见（本地栈验证）
-- [ ] 87 同步验证（backend+frontend 两镜像，V8 已在线自动迁移无需新迁移）
+- [x] 前端真机页：列表→详情→Gap 全链路可操作；空态与 no_sim_counterpart 分支渲染正确（构建/API 静态验证 + 87 部署验证；浏览器人工走查留用户）
+- [x] 报告含 Gap 章节：有真机会话项目可见对照表；无真机项目显式标注
+- [x] E2E：e2e_rehearsal 导入的会话在前端页与报告中均可见（本地栈验证）
+- [x] 87 同步验证（实际与 V0.9 合并同步：backend/runtime/frontend/sim-worker 4 镜像，V8–V11 自动迁移）
 
 ## W2 风险
 
@@ -543,12 +543,12 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 
 ## V0.9 DoD
 
-- [ ] failure_record CRUD+幂等可用（V9 迁移只走 Flyway，禁止手工 ALTER）
-- [ ] 存量 W2/W4 取证 5 类全部入库，GET /api/failures 可查
-- [ ] 报告 v3：Failure 章节 + Release Decision 摘要在 demo 项目报告可见
-- [ ] Scenario JSON 随 sim run 归档且同参数重建场景逐位一致（单测锁定）
-- [ ] Gate 1 框架链路通（录入→判定→recall 报表，无数据空态可跑）
-- [ ] 87 同步验证（backend/runtime/sim-worker 三镜像）
+- [x] failure_record CRUD+幂等可用（V9 迁移只走 Flyway，禁止手工 ALTER）
+- [x] 存量 W2/W4 取证 5 类全部入库，GET /api/failures 可查（实际回填 6 条，平台级 project_id NULL）
+- [x] 报告 v3：Failure 章节 + Release Decision 摘要在 demo 项目报告可见
+- [x] Scenario JSON 随 sim run 归档且同参数重建场景逐位一致（单测锁定；另有 SDF 位级 A/B 五场景 + n=6 物理批次双回归）
+- [x] Gate 1 框架链路通（录入→判定→recall 报表，无数据空态可跑；本地冒烟 caseId=1 recall=1.0）
+- [x] 87 同步验证（backend/runtime/sim-worker 三镜像——实际含 frontend 共 4 镜像，V9/V10/V11 迁移 success）
 
 ## V0.9 风险
 
