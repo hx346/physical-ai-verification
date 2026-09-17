@@ -718,3 +718,20 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
     **launch 重构回归**：解析 experiment SUCCEEDED E00310（buildSimContext 抽取无破坏）。
   - 验证：runtime pytest 50 passed + ruff clean；backend mvn test 27 passed BUILD SUCCESS；
     三镜像重建栈 healthy。CI 已确认关闭（2026-09-15 0d84a11，触发器仅手动）。
+
+- 2026-09-17 **Track B Reality DB 落地（DoD 第 3 项达成，本地栈冒烟全绿）**：
+  - **Flyway V12 `reality_observation`**：device_model/environment JSONB/task/metric/
+    mean/P50/P95/samples/**provenance CHECK（literature/measured/calibrated）**/
+    source_session_id/source_failure_id（V9 四元组关联——"失败+修正"入查询面）/
+    external_key 部分唯一索引（派生幂等 reality-session-{sessionId}-{metric}，手工
+    录入不受约束同 V8/V9 模式）。
+  - **RealityController 三入口**：①POST /observations/from-session/{id}（会话聚合
+    自动派生，**派生上下文 device/environment/task 由录入者声明**——会话不含设备
+    元数据是 V0.8 设计，如实）；②POST /observations（手工 literature/measured，
+    **calibrated 拒绝手工录入**——只能由 Track D 校准 ACTIVE 回写产生）；③GET
+    /observations（deviceModel/metric/task/provenance 过滤 + failure LEFT JOIN 展开
+    failure_mode/correction 语境）。
+  - **冒烟实测**：fake-cell 会话派生 5 指标 created=5；幂等重推 created=0 skipped=5；
+    手工录入方案 §23 例（D455@700mm/反光金属 P50 3.2/P95 8.4/118k 样本 literature）；
+    failure-smoke-1 关联条目查询 JOIN 展开 ✓；calibrated 手工录入正确拒绝（code 1000）。
+    V12 迁移 0.107s success。
