@@ -58,7 +58,10 @@ class ReportServiceTest {
     private ReportService service(RecordingStore store, List<Map<String, Object>> items) {
         VerificationRunService runService = mock(VerificationRunService.class);
         when(runService.findItems(anyString())).thenReturn(items);
-        return new ReportService(runService, mock(JdbcTemplate.class), store);
+        // V0.8 W2：SimRealGapService 为第 4 依赖（Gap 章节）；mock 的 JdbcTemplate
+        // 查不到会话 → appendGapSection 走"无真机对照"诚实分支，不触 runtime
+        return new ReportService(runService, mock(JdbcTemplate.class), store,
+                mock(SimRealGapService.class));
     }
 
     @Test
@@ -70,7 +73,8 @@ class ReportServiceTest {
         String second = reportService.renderAndArchive("run-1", "sys");
 
         assertEquals(1, store.putCalls, "第二次下载应跳过归档（快照语义）");
-        assertEquals(first, new String(store.files.get("/reports/run-run-1/report.md"),
+        // key 无前导斜杠（V0.3 W3 修复：LocalFs 拒绝绝对路径）——原测试带斜杠自那时起已烂
+        assertEquals(first, new String(store.files.get("reports/run-run-1/report.md"),
                 java.nio.charset.StandardCharsets.UTF_8));
         assertTrue(second.contains("run-1"));
     }

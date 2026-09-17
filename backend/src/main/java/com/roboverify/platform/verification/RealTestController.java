@@ -1,6 +1,8 @@
 package com.roboverify.platform.verification;
 
+import com.roboverify.platform.common.api.ErrorCode;
 import com.roboverify.platform.common.api.Result;
+import com.roboverify.platform.common.exception.BizException;
 import org.slf4j.MDC;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,12 +33,14 @@ public class RealTestController {
     private final JdbcTemplate jdbcTemplate;
     private final RuntimeClient runtimeClient;
     private final IrRepository irRepository;
+    private final SimRealGapService simRealGapService;
 
     public RealTestController(JdbcTemplate jdbcTemplate, RuntimeClient runtimeClient,
-                              IrRepository irRepository) {
+                              IrRepository irRepository, SimRealGapService simRealGapService) {
         this.jdbcTemplate = jdbcTemplate;
         this.runtimeClient = runtimeClient;
         this.irRepository = irRepository;
+        this.simRealGapService = simRealGapService;
     }
 
     public record ImportCsvRequest(String projectId, String csv, String note, String externalKey) {
@@ -149,6 +153,21 @@ public class RealTestController {
     @PostMapping("/gap")
     public Result<Map<String, Object>> gap(@RequestBody GapRequest request) {
         return Result.ok(runtimeClient.realtestGap(request.sessionId(), request.simSummary()));
+    }
+
+    /**
+     * 会话 Gap（V0.8 W2）：sim 侧由服务端从项目最新实验/仿真证据派生——
+     * 前端真机页与报告 Gap 章节共用 SimRealGapService 单一实现。
+     */
+    @GetMapping("/sessions/{id}/gap")
+    public Result<Map<String, Object>> sessionGap(@PathVariable String id) {
+        List<String> projects = jdbcTemplate.queryForList(
+                "SELECT project_id::text FROM real_test_session WHERE id = ?::uuid",
+                String.class, id);
+        if (projects.isEmpty()) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "会话不存在：id=" + id);
+        }
+        return Result.ok(simRealGapService.gapForSession(id, projects.get(0)));
     }
 
     public record CalibrateRequest(

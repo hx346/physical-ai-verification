@@ -25,13 +25,15 @@ public class ReportService {
     private final VerificationRunService runService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     private final ObjectStore objectStore;
+    private final SimRealGapService simRealGapService;
 
     public ReportService(VerificationRunService runService,
                          org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
-                         ObjectStore objectStore) {
+                         ObjectStore objectStore, SimRealGapService simRealGapService) {
         this.runService = runService;
         this.jdbcTemplate = jdbcTemplate;
         this.objectStore = objectStore;
+        this.simRealGapService = simRealGapService;
     }
 
     /** 渲染并归档首次快照（幂等：已存在则跳过）。 */
@@ -117,7 +119,68 @@ public class ReportService {
           .append("每个判定可经 evidence id 与 traceId 追溯输入指纹与内核版本。\n");
         appendExperimentSection(md, projectId);
         appendComparisonSection(md, projectId);
+        appendGapSection(md, projectId);
         return md.toString();
+    }
+
+    /**
+     * 报告 v2.1（V0.8 W2）：Sim2Real Gap 章节——sim 侧由 SimRealGapService 从项目最新
+     * 实验/仿真证据派生（键归一在服务内），real 侧为项目最新真机会话。
+     * 诚实边界：无真机会话/无 sim 聚合/runtime 不可用时章节显式标注，不省略不编造。
+     */
+    @SuppressWarnings("unchecked")
+    private void appendGapSection(StringBuilder md, String projectId) {
+        if (projectId == null) {
+            return;
+        }
+        md.append("\n## Sim2Real Gap\n\n");
+        List<String> sessions = jdbcTemplate.queryForList(
+                "SELECT id::text FROM real_test_session WHERE project_id = ?::uuid "
+                        + "ORDER BY created_at DESC LIMIT 1",
+                String.class, projectId);
+        if (sessions.isEmpty()) {
+            md.append("> 本项目暂无真机会话——无真机对照（真机数据接入后重新生成报告可补全）。\n");
+            return;
+        }
+        String sessionId = sessions.get(0);
+        Map<String, Object> gapResult;
+        try {
+            gapResult = simRealGapService.gapForSession(sessionId, projectId);
+        } catch (com.roboverify.platform.common.exception.BizException e) {
+            md.append("> runtime 不可用，本章节缺失（服务恢复后重新生成报告可补全）。\n");
+            return;
+        }
+        if (gapResult.get("gap") == null) {
+            md.append("> ").append(orDash(gapResult.get("note"))).append('\n');
+            return;
+        }
+        md.append("- 真机会话：`").append(sessionId).append("`\n")
+          .append("- sim 来源：").append(orDash(gapResult.get("simSource"))).append("\n\n");
+        Map<String, Object> gap = (Map<String, Object>) gapResult.get("gap");
+        Map<String, Object> real = (Map<String, Object>) gapResult.getOrDefault("real", Map.of());
+        md.append("| 指标 | sim | real mean | real P95 | gap % | 结论 |\n")
+          .append("|---|---:|---:|---:|---:|---|\n");
+        gap.forEach((metric, v) -> {
+            Map<String, Object> realStats = real.get(metric) instanceof Map<?, ?> r
+                    ? (Map<String, Object>) r : Map.of();
+            if (v instanceof Map<?, ?> vm && "no_sim_counterpart".equals(vm.get("status"))) {
+                md.append("| ").append(metric)
+                  .append(" | - | ").append(fmt(realStats.get("mean")))
+                  .append(" | ").append(fmt(realStats.get("P95")))
+                  .append(" | - | 无仿真对照 |\n");
+            } else if (v instanceof Map<?, ?> vm) {
+                md.append("| ").append(metric)
+                  .append(" | ").append(fmt(vm.get("sim")))
+                  .append(" | ").append(fmt(realStats.get("mean")))
+                  .append(" | ").append(fmt(realStats.get("P95")))
+                  .append(" | ").append(vm.get("gap_percent") == null ? "-"
+                          : String.format("%.1f%%", ((Number) vm.get("gap_percent")).doubleValue()))
+                  .append(" | ").append(orDash(vm.get("verdict"))).append(" |\n");
+            }
+        });
+        md.append("\n> verdict 语义：within_20pct = sim 与 real 偏差在 ±20% 内；")
+          .append("exceeds_20pct = 超 20%（Real2Sim 校准的起点信号）；")
+          .append("无仿真对照 = 该指标 sim 侧无对应（如 latency_ms）。\n");
     }
 
     /** 报告 v2（V0.5 W2）：项目最新对照实验——逐指标并列 + 相对基准差值 + 假设。 */
