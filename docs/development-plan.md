@@ -636,3 +636,65 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
   - **③ springdoc 核实**（参照 KCDR 治理仓做法：Boot 与 springdoc 同车钉版不越线）：maven central
     最新仍 3.1.1（无升级路径）；3.1.1 jar 的 AutoConfiguration.imports 仅注册 Swagger UI 三类，
     核心 api-docs 配置未注册（装配失败根因线索）。维持等上游，pom 注释已更新。
+
+# 14. V1.0 — Real2Sim + Calibrated Asset（2026-09-17 启动；方案 §44/§21-23）
+
+> 目标：把"仿真可信"从单参数经验校准升级为**多参数估计 + 数据资产**——校准引擎 v1、
+> Reality DB 查询面、资产 provenance 分级、Verification Rule 版本化。Gate 2（专家认可
+> ≥80%）为外部项，框架先行空态可跑（同 Gate 1 模式）。做到这里才真正形成商业产品。
+
+## 现有基础（V1.0 的起点，全部已有）
+
+- 校准 v0：`calibration/least_squares.py` 一维 sigma_scale 网格+插值（无 scipy 依赖），产出写 model_version（DRAFT→TESTING→ACTIVE，版本切换即回滚）
+- 前向采样：experiment backend=simulator LHS 批次 + 两级 DAG 并行 + aggregate_runs 聚合 + 参数 override（W4 part_mass_kg 同型）——校准的仿真分布来源，不新造轮子
+- 真机侧：real_test_session/telemetry + summary 聚合 + SimRealGapService（三族指标键归一）
+- 敏感性先验（参数选择的实证依据）：W3 证真实链 depth_noise 杠杆臂仅 ~5-13%、friction/object_size 主导（E00220/W3/W4 一致）
+- V9 failure_record 四元组——Reality DB 的"失败+修正"维度已有数据源
+
+## 任务拆解
+
+1. **校准引擎 v1：多参数估计**（runtime，Track A）
+   - `calibration/multi_param.py`：一维 → 多参数（v1 = depth_noise_mm × friction_coeff 两参数起步，网格笛卡尔积）
+   - 架构：**前向仿真与估计器解耦**——输入=参数网格点的仿真聚合（由 experiment 引擎编排产生），估计器在网格响应面上做 MLE（高斯似然，无 scipy）
+   - 响应面：规则网格双线性插值；指标空间=pick_success_rate / position_error_mm_P95 / perception_error_mm_mean（与真机 summary 同键——三族键归一教训）
+   - **不可辨识检测**：后验平台/Hessian 退化（网格上 logLik 曲面平坦方向）→ 输出 identifiable=false + 降维建议，禁止硬给点估计（UNKNOWN 是合法结论）
+   - 输出：{params, predictions, residuals, logLik, identifiable, modelBasis} → 平台写 model_version（多参数 payload，状态机复用）
+   - backend 编排（Track A'，随首切面后行）：POST /api/calibrations {sessionId, paramGrid} → 逐网格点发批次 → 收割 → runtime fit → model_version DRAFT
+2. **Reality DB v1**（backend+DB，Track B）
+   - Flyway V12：`reality_observation` 表（device_model/env 条件 JSONB（lux/surface/distance…）/task/metric/p50/p95/samples/provenance/source_session_id/created_at）
+   - 数据源 v1：real_test_session 聚合自动派生（POST /api/reality/observations/from-session/{id}）+ 手工录入（measured 级）；failure_record 关联（同 device/env 的失败修正入查询面）
+   - 查询：GET /api/reality/observations?deviceModel=&metric= → 分布列表（报告/校准引擎可引用——"这种数据以后比 Prompt 有价值得多"，方案 §23）
+3. **Verification Rule 版本化**（backend，Track C）
+   - Flyway V13：`verification_rule` 表（scope=metric_alias/rule_key/payload JSONB/version/active/created_at）
+   - **收敛双硬编码**：SimRealGapService.java:32 与 SimulationController.java:165 两份 SIM_METRIC_ALIASES → 单源读表（启动加载+缓存，表缺失回退内置默认并告警——迁移兼容）
+   - 版本切换 API（POST /api/rules/{key}/activate）= 规则回滚机制
+4. **provenance 填充**（backend，Track D，薄）
+   - reality_observation.provenance 分级 literature/measured/calibrated 强校验（CHECK）
+   - 校准 model_version → ACTIVE 时：对应观测/资产误差模型标 calibrated + 来源 model_version_id（回写位，最小实现）
+5. **Gate 2 框架**（backend，薄，仿 V11）
+   - gate2_review 表（专家审核记录）+ 认可率报表 API（Recommendation Acceptance ≥80% 判据）；素材未到位空态 PENDING，不出结论
+
+## V1.0 DoD
+
+- [ ] 多参数校准：合成数据（已知参数+噪声）拟合恢复参数 ≤10% 偏差；不可辨识场景正确标记（单测锁定）
+- [ ] 校准编排端到端：真机（或合成 fake_cell）会话 → 网格批次 → fit → model_version DRAFT 落库（本地栈实测）
+- [ ] Reality DB：observation 落库 + 会话派生 + 查询 API 返回分布（含 failure 关联）
+- [ ] Rule 版本化：两处硬编码收敛单源读表，Gap/判定两路回归不漂移；版本切换生效
+- [ ] provenance 分级校验 + calibrated 回写位可用
+- [ ] Gate 2 框架空态可跑（PENDING 不出结论）
+- [ ] 回归：demo 默认门控全绿 + mvn test + pytest + vue-tsc --noEmit（CI 关闭教训）
+- [ ] 87 同步验证
+
+## V1.0 风险
+
+| 风险 | 等级 | 缓解 |
+|---|---|---|
+| 参数不可辨识（success 对 σ/μ 耦合敏感） | 高 | 网格 logLik 曲面平坦检测 → identifiable=false + 降维建议；W3/W4 敏感性先验指导参数选择与档位 |
+| 仿真网格批次开销（每点 N run × 60-90s） | 高 | v1 网格 ≤3×3 档 × n=6（复用 E00110/DAG 模式，单机可行）；响应面点入 Reality DB 复用（校准一次采样多次估计） |
+| Reality DB 过度设计（拟人化数据护城河） | 中 | 只落观测分布+查询，不做知识图谱；schema 对齐 §23 例（D455@700mm/lux/surface → P50/P95/samples） |
+| Rule 表化破坏现有 Gap/判定行为 | 中 | 迁移 seed=现硬编码值；两路回归（gap 端点 + simulation 判定）+ 表缺失回退内置默认不阻断 |
+| Gate 2 素材缺位（同 Gate 1） | 高 | 框架空态可跑；认可率数字标"待素材"不伪造 |
+
+## V1.0 进展记录
+
+- 2026-09-17 **启动**：§14 计划写入（五任务/DoD 八项/风险五条）；Track A 校准引擎 v1 首切面开工。
