@@ -64,7 +64,10 @@
 			<version>${sa-token.version}</version>
 		</dependency>
 		<!-- OpenAPI 文档：springdoc 3.1.1（官方称支持 Boot 4）实测在 Boot 4.1 + starter-webmvc 下
-		     自动配置未装配（/v3/api-docs 无映射），待上游适配后启用
+		     自动配置未装配（/v3/api-docs 无映射）。2026-09-17 核实：maven central 最新仍 3.1.1；
+		     3.1.1 jar 的 AutoConfiguration.imports 仅注册 Swagger UI 三类（SwaggerConfig/
+		     SwaggerUiConfigProperties/SwaggerUiOAuthProperties），核心 api-docs 配置未注册。
+		     待上游出完整适配 Boot 4.1 的版本后启用（参照 KCDR：Boot 与 springdoc 同车升、不单方面越线）
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

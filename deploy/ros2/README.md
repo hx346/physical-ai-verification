@@ -72,6 +72,21 @@ humble 容器内 smoke_talker（合成源）→ 采集器直连推送 → 平台
 （16 行/5 指标聚合/幂等重推 duplicate=True/Gap 四指标映射）。
 **合成源只验证管道，不产生真实 Gap 结论**（诚实边界）。
 
+## 合成抓取单元（fake_cell，演示/回归数据源）
+
+```bash
+# ROS 2 环境内与采集器并行（采集器建议 --external-key fake-cell-... 便于识别清理）
+python3 fake_cell.py --runs 20 --pick-prob 0.85 --seed 42 --cycle 7.0
+
+# 一键端到端（前置：本地栈 + ros:humble-ros-base 镜像）：合成单元 → 采集 → 平台会话 → 确定性断言
+bash deploy/ros2/e2e_fake_cell.sh
+```
+
+与 smoke_talker 分工：smoke_talker 验边界语义（布尔/缺字段/非法 JSON，8 条即停）；
+fake_cell 出规模数据（每 run 五字段全出、失败 run 定位误差放大、同 seed 确定性）。
+用途=真机接入前的前端真机页/报告 Gap 演示数据与管道回归。**合成会话不构成
+真机对照结论**（external-key 带 fake-cell- 前缀，演示数据定期清理）。
+
 ## 状态与边界（诚实声明）
 
 - 真实 ROS 2 humble 容器联调通过（订阅/派生/落盘/边界语义/SIGINT 关闭）；

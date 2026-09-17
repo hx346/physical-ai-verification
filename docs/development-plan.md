@@ -619,3 +619,20 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
     端点（simSource=experiment:simulator 键归一在 87 真实数据上生效）；前端 200。
   - **W3 rosbag 不做**（决策：无真实 rosbag 素材，回放框架与真机接入自然捆绑，避免空转）。
   - **前端浏览器人工过一遍**：留给用户（无浏览器自动化工具；路由/构建/API 均已静态验证）。
+
+- 2026-09-17 **v0.9.0 发布后，等外部三项的本地处置（发布提交 dfaf794/c1deff8，tag v0.9.0 已推）**：
+  - **① fake_cell 合成单元落地**（deploy/ros2/fake_cell.py + e2e_fake_cell.sh + rehearse_fake_inside.sh）：
+    模拟抓取单元 N run——每 run 一条正常 task_result（指标分布抽样、pick_success 概率翻转、
+    失败 run 定位误差显著放大）、同 seed 确定性、--self-test 纯函数自验。E2E 实测 FAKE_CELL_OK：
+    12 run → 60 行 → 五指标聚合 → **pick_rate 0.9167 与宿主同 seed 期望精确一致**（端到端确定性）。
+    用途=真机接入前的前端真机页/报告 Gap 演示数据 + 管道回归；诚实边界同 rehearsal（合成会话
+    非真机结论）。**坑再证**：heredoc 占用 stdin 时 `python -` 无法同时从管道读数据
+    （json.load(sys.stdin) 读到空）——数据走相对路径临时文件 + argv 传参。
+  - **② Gate 1 流程演练**（验框架链路，非 Gate 1 结论——素材仍待）：rehearsal- 前缀 4 案例
+    5 判定（matched 3/5，另存量 smoke-case 1/1）→ recall 报表 4/6=0.667 status=FAIL——
+    算法/阈值/matched 双分支判定路径全部验证；**演练数据已清理**（recall 为全局聚合，
+    SQL DELETE rehearsal-%，库恢复仅存 smoke-case 留档）。Gate 1 真实结论仍 PENDING：
+    合成素材无"隐藏结果的对照锚点"，recall 只能来自真实历史项目，不伪造。
+  - **③ springdoc 核实**（参照 KCDR 治理仓做法：Boot 与 springdoc 同车钉版不越线）：maven central
+    最新仍 3.1.1（无升级路径）；3.1.1 jar 的 AutoConfiguration.imports 仅注册 Swagger UI 三类，
+    核心 api-docs 配置未注册（装配失败根因线索）。维持等上游，pom 注释已更新。
