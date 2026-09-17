@@ -12,6 +12,9 @@
         <a-menu-item key="/experiment">
           <ExperimentOutlined /><span>实验引擎</span>
         </a-menu-item>
+        <a-menu-item key="/realtest">
+          <RobotOutlined /><span>真机测试</span>
+        </a-menu-item>
       </a-menu>
     </a-layout-sider>
     <a-layout>
@@ -29,7 +32,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { AppstoreOutlined, ExperimentOutlined, TableOutlined } from '@ant-design/icons-vue'
+import { AppstoreOutlined, ExperimentOutlined, RobotOutlined, TableOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
