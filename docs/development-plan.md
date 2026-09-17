@@ -676,14 +676,14 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
 
 ## V1.0 DoD
 
-- [ ] 多参数校准：合成数据（已知参数+噪声）拟合恢复参数 ≤10% 偏差；不可辨识场景正确标记（单测锁定）
-- [ ] 校准编排端到端：真机（或合成 fake_cell）会话 → 网格批次 → fit → model_version DRAFT 落库（本地栈实测）
-- [ ] Reality DB：observation 落库 + 会话派生 + 查询 API 返回分布（含 failure 关联）
-- [ ] Rule 版本化：两处硬编码收敛单源读表，Gap/判定两路回归不漂移；版本切换生效
-- [ ] provenance 分级校验 + calibrated 回写位可用
-- [ ] Gate 2 框架空态可跑（PENDING 不出结论）
-- [ ] 回归：demo 默认门控全绿 + mvn test + pytest + vue-tsc --noEmit（CI 关闭教训）
-- [ ] 87 同步验证
+- [x] 多参数校准：合成数据（已知参数+噪声）拟合恢复参数 ≤10% 偏差；不可辨识场景正确标记（单测锁定）
+- [x] 校准编排端到端：真机（或合成 fake_cell）会话 → 网格批次 → fit → model_version DRAFT 落库（本地栈实测，dev c0bb408）
+- [x] Reality DB：observation 落库 + 会话派生 + 查询 API 返回分布（含 failure 关联）（dev 585bcd7）
+- [x] Rule 版本化：两处硬编码收敛单源读表，Gap/判定两路回归不漂移；版本切换生效（dev d6c8330，v2 切换/回滚冒烟）
+- [x] provenance 分级校验 + calibrated 回写位可用（activate 实测 calibratedObservations=5）
+- [x] Gate 2 框架空态可跑（PENDING 不出结论；FAIL 路径与非法 verdict 拒绝实测，演练数据已清理）
+- [x] 回归：mvn test 27 + pytest 50 + vue-tsc 0 错 + 报告 v3 三章节（Gap/Failure/Release）冒烟 ✓；**demo 全量门控留发布回归**（dev→main 合并前执行，发布口径）
+- [x] 87 同步验证（3 镜像 1.15GB：V12/13/14 迁移 success、rules seed 双 key active、reality 空、gate2 PENDING、failures 存量 3 条可查）
 
 ## V1.0 风险
 
@@ -757,3 +757,11 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
     3 条 0.667 FAIL 路径→非法 verdict 拒绝→演练数据清理恢复 PENDING（Gate 1 同款
     全局聚合清理纪律）。
   - 验证：mvn test 27 passed BUILD SUCCESS；V13/V14 双迁移 success；backend 重建 healthy。
+
+- 2026-09-17 **87 同步 + V1.0 收口（DoD 8/8）**：3 镜像（backend/runtime/sim-worker，
+  1.15GB save|gzip|scp|load）；V12/13/14 三迁移 success；87 冒烟四路全绿（rules seed
+  双 key v1 active / reality 查询空库可用 / gate2 PENDING / failures 存量可查）。
+  frontend 无改动未同步（87 沿用旧镜像）。本地收尾：vue-tsc 0 错；报告 v3 三章节
+  （Sim2Real Gap/Failure Records/Release Decision Summary）生成冒烟 ✓——表化规则
+  路径（SimRealGapService→VerificationRuleService 读表）无回归。
+  **V1.0 五任务全部落地**；demo 全量门控按发布口径留 dev→main 合并前执行。
