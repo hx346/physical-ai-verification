@@ -231,17 +231,36 @@ public class RealTestController {
                 }));
     }
 
-    /** 版本状态机：DRAFT→TESTING→ACTIVE（旧 ACTIVE 自动 DEPRECATED；回滚=再激活旧版本）。 */
+    /** 版本状态机：DRAFT→TESTING→ACTIVE（旧 ACTIVE 自动 DEPRECATED；回滚=再激活旧版本）。
+     *  V1.0 Track D：sim_param_calibration 版本 ACTIVE 时，来源会话派生的
+     *  reality_observation 行（measured）升级 calibrated 并标注本版本——provenance
+     *  分级的回写位（RealityController 拒绝手工 calibrated 的闭环对侧）。 */
     @PostMapping("/models/{id}/activate")
-    public Result<Void> activate(@PathVariable String id) {
-        String target = jdbcTemplate.queryForObject(
-                "SELECT target_asset FROM model_version WHERE id=?::uuid", String.class, id);
+    public Result<Map<String, Object>> activate(@PathVariable String id) {
+        Map<String, Object> mv = jdbcTemplate.queryForMap(
+                "SELECT model_type, target_asset, params::text AS params "
+                        + "FROM model_version WHERE id=?::uuid", id);
+        String target = String.valueOf(mv.get("target_asset"));
         jdbcTemplate.update(
                 "UPDATE model_version SET lifecycle='DEPRECATED' WHERE target_asset=? AND lifecycle='ACTIVE'",
                 target);
         jdbcTemplate.update(
                 "UPDATE model_version SET lifecycle='ACTIVE', activated_at=now() WHERE id=?::uuid", id);
-        return Result.ok();
+
+        Map<String, Object> out = new HashMap<>();
+        if (CalibrationController.MODEL_TYPE_SIM_PARAMS.equals(mv.get("model_type"))) {
+            Object sessionId = readMap(String.valueOf(mv.get("params"))).get("sessionId");
+            if (sessionId != null && !String.valueOf(sessionId).isBlank()) {
+                int upgraded = jdbcTemplate.update(
+                        "UPDATE reality_observation SET provenance='calibrated', "
+                                + "note = concat(coalesce(note, ''), ' [calibrated by model_version ', ?::text, ']') "
+                                + "WHERE external_key LIKE 'reality-session-' || ?::text || '-%' "
+                                + "AND provenance = 'measured'",
+                        id, sessionId);
+                out.put("calibratedObservations", upgraded);
+            }
+        }
+        return Result.ok(out);
     }
 
     private void flush(List<Object[]> batch) {

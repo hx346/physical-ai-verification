@@ -29,18 +29,18 @@ public class SimRealGapService {
             "cycle_time_s_mean", "cycle_time_s_mean",
             "perception_error_mm_mean", "perception_error_mm_mean");
 
-    private static final Map<String, String> SIM_METRIC_ALIASES = Map.of(
-            "pick_success", "success_rate_mean",
-            "position_error_mm", "accuracy_p95_mean_mm",
-            "cycle_time_s", "cycle_time_s_mean",
-            "perception_error_mm", "perception_error_mm_mean");
+    // 仿真聚合键 → 解析式聚合键：V1.0 Track C 收敛至 VerificationRuleService
+    // （V13 表化，seed v1 与原硬编码逐键一致；此处不再持有副本防漂移）
 
     private final JdbcTemplate jdbcTemplate;
     private final RuntimeClient runtimeClient;
+    private final VerificationRuleService verificationRuleService;
 
-    public SimRealGapService(JdbcTemplate jdbcTemplate, RuntimeClient runtimeClient) {
+    public SimRealGapService(JdbcTemplate jdbcTemplate, RuntimeClient runtimeClient,
+                             VerificationRuleService verificationRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.runtimeClient = runtimeClient;
+        this.verificationRuleService = verificationRuleService;
     }
 
     /**
@@ -73,7 +73,7 @@ public class SimRealGapService {
         if (!rows.isEmpty()) {
             Object metrics = ((Map<?, ?>) rows.get(0)).get("metrics");
             if (metrics instanceof Map<?, ?> m) {
-                Map<String, Double> summary = mapKeys(m, SIM_METRIC_ALIASES);
+                Map<String, Double> summary = mapKeys(m, verificationRuleService.simMetricAliases());
                 if (!summary.isEmpty()) {
                     return Map.of("simSummary", summary, "simSource", "simulation-run");
                 }

@@ -41,7 +41,8 @@ public class CalibrationController {
     private static final Logger log = LoggerFactory.getLogger(CalibrationController.class);
 
     private static final String JOB_TYPE = "calibration";
-    private static final String MODEL_TYPE_SIM_PARAMS = "sim_param_calibration";
+    /** public：RealTestController activate 回写（Track D）共用，单一事实来源。 */
+    public static final String MODEL_TYPE_SIM_PARAMS = "sim_param_calibration";
     private static final int NPARAMS_V1 = 2;
     private static final int MIN_SAMPLES_PER_METRIC = 5;
     private static final double SE_FLOOR = 1e-9;
@@ -161,6 +162,11 @@ public class CalibrationController {
         // fit 结果整体入 params（含 params/paramCis/identifiable/surface/aggregates）
         ObjectNode params = (ObjectNode) result;
         params.put("jobKey", jobKey);
+        // Track D 回写锚点：activate 时按 sessionId 升级来源会话观测为 calibrated
+        String sourceSession = payload.path("sessionId").asText("");
+        if (!sourceSession.isEmpty()) {
+            params.put("sessionId", sourceSession);
+        }
         params.put("assumptions", P95_SE_ASSUMPTION);
         String modelId = jdbcTemplate.queryForObject(
                 "INSERT INTO model_version (model_type, target_asset, version, lifecycle, params) "

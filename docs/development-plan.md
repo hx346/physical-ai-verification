@@ -735,3 +735,25 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
     手工录入方案 §23 例（D455@700mm/反光金属 P50 3.2/P95 8.4/118k 样本 literature）；
     failure-smoke-1 关联条目查询 JOIN 展开 ✓；calibrated 手工录入正确拒绝（code 1000）。
     V12 迁移 0.107s success。
+
+- 2026-09-17 **Track C/D + Gate 2 落地（DoD 第 4/5/6 项达成，本地栈冒烟全绿）**：
+  - **Track C Rule 版本化（V13）**：两处硬编码语义不同各自成 key——`sim-metric-aliases`
+    （gap 归一：仿真聚合键→解析聚合键）与 `requirement-sim-metric-aliases`（判定：需求
+    指标→单 run 指标）；seed v1 与原 Map.of 逐键一致（行为回归保证）。
+    `VerificationRuleService` 单源（直查 DB 无缓存即无失效；无 active 行/表不可读回退
+    内置默认+warn，不阻断链路）；SimRealGapService/SimulationController 注入替换。
+    `RuleController`：版本新增（默认非 active）/激活切换（同 key 旧 active 自动撤销，
+    **回滚=activate 旧版本**）/历史查询。冒烟：gap 表化映射生效（simSource=experiment）；
+    v2 创建→激活→gap 在 v2 下正常→回滚 v1 全通。
+  - **Track D provenance 回写**：CalibrationController 摄取时 params 补 sessionId（锚点）；
+    `/realtest/models/{id}/activate` 对 sim_param_calibration 版本 ACTIVE 时，来源会话
+    派生观测（measured）批量升 **calibrated** 并标注版本——与 RealityController 拒绝
+    手工 calibrated 形成闭环。实测：activate 返回 calibratedObservations=5，查询
+    provenance=calibrated 5 行 ✓。（既有 DRAFT 版本无锚点，SQL 补 params.sessionId
+    后回写——jobKey 前缀佐证非编造。）
+  - **Gate 2 框架（V14）**：gate2_review（reviewer/subject/verdict CHECK
+    accept/reject/partial）+ 录入 API + acceptance 报表（**acceptance=accept/total，
+    partial 计分母不算认可——保守口径**；空态 PENDING 不出结论）。冒烟：PENDING→
+    3 条 0.667 FAIL 路径→非法 verdict 拒绝→演练数据清理恢复 PENDING（Gate 1 同款
+    全局聚合清理纪律）。
+  - 验证：mvn test 27 passed BUILD SUCCESS；V13/V14 双迁移 success；backend 重建 healthy。

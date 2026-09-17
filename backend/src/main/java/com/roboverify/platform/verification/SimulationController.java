@@ -42,15 +42,18 @@ public class SimulationController {
     private final JobQueueService jobQueueService;
     private final ObjectStore objectStore;
     private final StorageProperties storageProperties;
+    private final VerificationRuleService verificationRuleService;
 
     public SimulationController(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                                 JobQueueService jobQueueService, ObjectStore objectStore,
-                                StorageProperties storageProperties) {
+                                StorageProperties storageProperties,
+                                VerificationRuleService verificationRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.jobQueueService = jobQueueService;
         this.objectStore = objectStore;
         this.storageProperties = storageProperties;
+        this.verificationRuleService = verificationRuleService;
     }
 
     public record CreateRequest(
@@ -161,10 +164,8 @@ public class SimulationController {
         return out;
     }
 
-    /** 需求指标名 → 仿真指标名（显式映射，评审可审；语义对齐处手工维护）。 */
-    private static final Map<String, String> SIM_METRIC_ALIASES = Map.of(
-            "position_accuracy", "position_error_mm",
-            "picking_success_rate", "pick_success");
+    /** 需求指标名 → 仿真指标名：V1.0 Track C 收敛至 VerificationRuleService
+     *  （V13 表化 requirement-sim-metric-aliases，seed v1 逐键一致）。 */
 
     /**
      * W3 仿真判定链：需求阈值（requirement.ir 的 metric/operator/value）vs 仿真实测指标。
@@ -198,7 +199,7 @@ public class SimulationController {
         JsonNode valueNode = req.path("value");
         double threshold = valueNode.asDouble(Double.NaN);
         String simMetric = metrics.has(reqMetric) ? reqMetric
-                : SIM_METRIC_ALIASES.getOrDefault(reqMetric, "");
+                : verificationRuleService.requirementSimAliases().getOrDefault(reqMetric, "");
 
         ObjectNode verdict = objectMapper.createObjectNode();
         verdict.put("provenance", "simulation");
