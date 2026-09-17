@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -120,7 +121,77 @@ public class ReportService {
         appendExperimentSection(md, projectId);
         appendComparisonSection(md, projectId);
         appendGapSection(md, projectId);
+        appendFailureSection(md, projectId);
+        appendReleaseDecisionSection(md, items);
         return md.toString();
+    }
+
+    /**
+     * 报告 v3（V0.9）：Failure 章节——本项目失败取证 + 平台级失败模式库（V10 回填，
+     * project_id 为空的历史仿真校准取证）并列，按 severity 排序。
+     */
+    @SuppressWarnings("unchecked")
+    private void appendFailureSection(StringBuilder md, String projectId) {
+        md.append("\n## Failure Records\n\n");
+        var rows = jdbcTemplate.query(
+                "SELECT failure_mode, failure_desc, root_cause, correction, outcome, severity, source "
+                        + "FROM failure_record "
+                        + (projectId == null ? "WHERE project_id IS NULL "
+                        : "WHERE project_id = ?::uuid OR project_id IS NULL ")
+                        + "ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+                        + "WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 50",
+                (rs, i) -> {
+                    Map<String, Object> row = new HashMap<>();
+                    row.put("failureMode", rs.getString(1));
+                    row.put("failureDesc", rs.getString(2));
+                    row.put("rootCause", rs.getString(3));
+                    row.put("correction", rs.getString(4));
+                    row.put("outcome", rs.getString(5));
+                    row.put("severity", rs.getString(6));
+                    row.put("source", rs.getString(7));
+                    return row;
+                },
+                projectId == null ? new Object[0] : new Object[]{projectId});
+        if (rows.isEmpty()) {
+            md.append("> 暂无失败取证记录。\n");
+            return;
+        }
+        for (Map<String, Object> r : rows) {
+            md.append("### [").append(r.get("severity")).append("] ")
+              .append(r.get("failureMode")).append("（").append(r.get("source")).append("）\n\n")
+              .append("- **现象**：").append(orDash(r.get("failureDesc"))).append('\n')
+              .append("- **根因**：").append(orDash(r.get("rootCause"))).append('\n')
+              .append("- **修正**：").append(orDash(r.get("correction"))).append('\n')
+              .append("- **结局**：").append(orDash(r.get("outcome"))).append("\n\n");
+        }
+        md.append("> 平台库条目为平台自身仿真校准史沉淀（无项目归属），供本报告评审参考。\n");
+    }
+
+    /**
+     * 报告 v3（V0.9）：Release Decision 摘要——判定计数 + 证据完备性 + 失败取证计数。
+     * 放行决策永远由评审人做出，本章节只提供证据摘要（原则二/五：可追溯，不代决策）。
+     */
+    private void appendReleaseDecisionSection(StringBuilder md, List<Map<String, Object>> items) {
+        long pass = items.stream().filter(i -> "PASS".equals(i.get("status"))).count();
+        long fail = items.stream().filter(i -> "FAIL".equals(i.get("status"))).count();
+        long unknown = items.size() - pass - fail;
+        long withEvidence = items.stream().filter(i -> i.get("evidenceId") != null
+                && !"-".equals(String.valueOf(i.get("evidenceId")))).count();
+        md.append("\n## Release Decision Summary\n\n")
+          .append("| Requirement 判定 | 计数 |\n|---|---:|\n")
+          .append("| PASS | ").append(pass).append(" |\n")
+          .append("| FAIL | ").append(fail).append(" |\n")
+          .append("| UNKNOWN（合法结论，非缺陷） | ").append(unknown).append(" |\n\n")
+          .append("- 需求项：").append(items.size())
+          .append("，带证据链：").append(withEvidence).append('\n');
+        if (fail > 0) {
+            md.append("- **存在 FAIL 项**——不建议放行，逐项见验证矩阵与证据详情。\n");
+        } else if (unknown > 0) {
+            md.append("- 无 FAIL 项但有 UNKNOWN 项——放行前需补证据（UNKNOWN 不等于 PASS）。\n");
+        } else {
+            md.append("- 全部 PASS——证据完备性由评审人最终确认。\n");
+        }
+        md.append("\n> 放行/部署决策由评审人做出；本摘要仅汇集可追溯证据（原则五）。\n");
     }
 
     /**
