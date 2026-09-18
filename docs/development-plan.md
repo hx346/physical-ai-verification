@@ -765,3 +765,26 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
   （Sim2Real Gap/Failure Records/Release Decision Summary）生成冒烟 ✓——表化规则
   路径（SimRealGapService→VerificationRuleService 读表）无回归。
   **V1.0 五任务全部落地**；demo 全量门控按发布口径留 dev→main 合并前执行。
+
+- 2026-09-18 **v1.0.0 发布 + 三项后续填充（场景库/Reality DB/前端走查）**：
+  - **发布**：demo 默认门控全绿（三幕+位姿对照+Real2Sim 闭环）→ CHANGELOG 补录 →
+    三处定标 1.0.0（da55bb6）→ main ff 合并 → **tag v1.0.0 已推**。
+  - **场景库填充（V15 Scenario Registry）**：scenario_instance 表（label UNIQUE 幂等/
+    scenario echo 全量回显含 fixedGripper/tags 标签检索/来源 jobKey 可追溯）；
+    simulation 摄取自动注册（result.scenario → auto-sim-{jobKey}，V0.9 参数化 v2 的
+    归档至此可查可复用）；手工注册端点。**实测填充 4 变体**（窄深箱 450×450/宽箱
+    700×400+偏移/高堆叠 z_span 0.18/单层平铺+放置点偏移）全部 SUCCEEDED
+    （E00323-E00326）自动注册 + 1 条命名变体 bin-narrow-deep-450；echo 语义抽查
+    （width/depth 450 逐位回显 ✓）。**坑：PG jsonb `?` 操作符与 JDBC 占位符冲突
+    （tags ? ? 报错）——改 `tags @> ?::jsonb` 数组包含**。
+  - **Reality DB 积累**：库存 11 条=3 条 literature（D435 <2%@2m→40mm 上界 /
+    D455 <2%@4m→80mm 上界+Servi 2021 交叉佐证 / D405 1.4%@20cm——全部官方口径
+    换算，note 显式声明"derived upper bound, not measured distribution"+来源）+
+    demo 会话派生 measured（synthetic 标注）+ 此前 §23 例/calibrated/failure 关联。
+  - **前端走查（API 契约层，自动化部分）**：真机页五数据流（projects/sessions/
+    summary/gap/models）响应字段 vs RealTestView TS 接口逐项比对**零缺失**
+    （MetricStats{samples,mean,P50,P95}/GapEntry{gap_ratio,gap_percent,verdict,real,
+    sim} 键名全对齐）；页面 HTTP 200+bundle 1.5MB 加载+SPA fallback ✓。
+    **剩余人工 3 分钟清单**（无浏览器自动化工具，留给用户浏览器点检）：①选项目→
+    会话列表渲染 ②Drawer summary 聚合表+Gap 三色 verdict/no_sim_counterpart 分支
+    ③模型版本 Tab 激活确认弹窗 ④空态（无项目/无会话）渲染。

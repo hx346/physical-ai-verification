@@ -161,7 +161,28 @@ public class SimulationController {
                 "UPDATE job_queue SET payload = payload || ?::jsonb WHERE job_key=?",
                 "{\"ingestedEvidenceId\":\"" + evidenceId + "\"}", jobKey);
         out.put("evidenceId", evidenceId);
+        registerScenario(jobKey, result);
         return out;
+    }
+
+    /** V1.0 场景库填充：result 带 scenario echo（V0.9 参数化 v2 归档）时自动注册
+     *  Scenario Registry（label=auto-sim-{jobKey} UNIQUE 幂等；复现=同 scenario+同 seed）。 */
+    private void registerScenario(String jobKey, JsonNode result) {
+        try {
+            JsonNode scenario = result.path("scenario");
+            if (!scenario.isObject() || scenario.isEmpty()) {
+                return;
+            }
+            String scene = result.path("scene").asText(scenario.path("scene").asText("bin_picking"));
+            jdbcTemplate.update(
+                    "INSERT INTO scenario_instance (label, scene, scenario, tags, source_job_key, note) "
+                            + "VALUES (?, ?, ?::jsonb, '[\"auto\"]'::jsonb, ?, ?) ON CONFLICT (label) DO NOTHING",
+                    "auto-sim-" + jobKey, scene, scenario.toString(), jobKey,
+                    "auto-registered at simulation ingestion");
+            log.info("scenario auto-registered, jobKey={}, scene={}", jobKey, scene);
+        } catch (Exception e) {
+            log.warn("scenario 自动注册失败（不阻断摄取）jobKey={}", jobKey, e);
+        }
     }
 
     /** 需求指标名 → 仿真指标名：V1.0 Track C 收敛至 VerificationRuleService
