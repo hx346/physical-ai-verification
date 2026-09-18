@@ -7,6 +7,14 @@
 
 ### Added
 
+- **V1.0 Real2Sim + Calibrated Asset（2026-09-17/18，五任务全落地 DoD 8/8，tag v1.0.0——商业产品线成型）**：
+  - **校准引擎 v1**（`calibration/multi_param.py`）：σ_scale 一维 → 两参数 MLE（网格响应面双线性插值+高斯似然，无 scipy）；profile 95% CI + 不可辨识检测（响应面平坦/耦合如实标 identifiable=false，UNKNOWN 合法不硬给点估计）；**前向仿真与估计器解耦**（引擎吃参数网格点的仿真聚合）；测试驱动修 3 个实现 bug（MLE 权重归一化=信息量稀释 1.4 倍、profile 阈值应比较 -2ΔlnL 差 2 倍、logLik Hessian 负定时条件数须取绝对值）
+  - **校准编排**（`POST /api/calibrations`）：网格×repeats 展开 simulation 子 job（DAG 复用，`cal:…:pt{p}:run{r}` 幂等+断点续跑）→ 逐点聚合 → fit → model_version DRAFT 摄取幂等；realObs se 推导（成功率 sqrt(p(1-p)/n)、P95 正态近似 2.11σ/√n）**假设显式入 params.assumptions**、样本<5 不派生；E2E 实测 8 run 561s identifiable=true
+  - **Reality DB v1**（V12 `reality_observation`）：设备×环境×任务×指标分布（方案 §23 数据护城河最小落库）；provenance CHECK（literature/measured/calibrated）；会话聚合自动派生（external_key 部分唯一幂等）+ 手工录入（calibrated 级拒绝手工，只能回写产生）+ V9 failure 关联查询 JOIN
+  - **Verification Rule 版本化**（V13 双 key，seed 与原硬编码逐键一致）：SimRealGapService 与 SimulationController 两处映射收敛 `VerificationRuleService` 单源（直查表+回退内置防断链）；版本激活切换 = 规则回滚机制
+  - **provenance 回写**：校准 model_version ACTIVE 时来源会话派生观测批量升 calibrated 并标注版本
+  - **Gate 2 框架**（V14 `gate2_review`）：专家审核录入 + acceptance 报表（accept/total 保守口径，partial 计分母）；空态 PENDING 不出结论
+  - 附带：`fake_cell.py` 合成抓取单元 + `e2e_fake_cell.sh` 一键演练（真机接入前演示/回归数据源，同 seed 端到端确定性）；87 已同步（3 镜像，V12-14 迁移+seed 生成）
 - **V0.9 Evidence & Failure Intelligence（2026-09-17，四轨+串行队列全部完成）**：Failure DB 最小落库（Flyway V9 `failure_record` 四元组+severity/source CHECK+trace JSONB+external_key 部分唯一索引，POST/GET /api/failures 幂等）；V10 存量取证回填 6 条（W4 三重真因×3 / W2"接触失效"证伪 / W3 解析映射高估 / μ=0.18 滑脱基线，平台级归属 project_id NULL）；报告 v3 新增 Failure Records + Release Decision Summary 章节（PASS/FAIL/UNKNOWN 计数与显式结论规则，放行决策永远由评审人做）；场景参数化 v2（simulation schema 0.2.0 新增 environment.scenario，缺省值=历史硬编码逐位一致；scenario.json 随 run 归档 sim-logs/{jobKey}/，复现语义=参数逐位一致；校准夹爪几何不参数化但 fixed_gripper 全量回显）；Gate 1 执行框架（Flyway V11 gate1_case/gate1_finding，录入→判定→recall 报表；语义匹配由评审人记录不自动匹配；空态 PENDING 不出 STOP 结论）。Track D 回归双证：SDF 位级 A/B 五场景逐位一致 + n=6 物理批次 pick 5/6 与 W4 基线一致
 - **V0.8 W2 真机数据可见化（2026-09-17）**：前端真机测试页 /realtest（会话列表→详情 Drawer summary 聚合→Gap 对照表 verdict 三色 tag；no_sim_counterpart 如实渲染"无仿真对照"；模型版本 Tab 生命周期徽标+激活确认）；SimRealGapService 单源 Gap 派生（报告与前端同源防双实现漂移；三族指标键归一：解析式聚合键/仿真后端聚合键/单 run 指标键，不归一则假性 no_sim_counterpart）；GET /api/realtest/sessions/{id}/gap；报告 v2.1 Sim2Real Gap 章节（无真机/无 sim/runtime 挂三分支显式标注，不省略章节）
 - **V0.8 W1 真机遥测直连管道（2026-09-17）**：ROS2 只读采集器 v1（deploy/ros2/collect_telemetry.py——指标扩容 perception_error_mm/latency_ms 与仿真聚合同名对齐；--api-endpoint/--api-token/--project-id 采集结束自动 POST 导入，本地 CSV 仍为事实源，推送失败退出码 3 幂等可重试）；Flyway V8（real_test_session.external_key 部分唯一索引）+ 导入幂等（ON CONFLICT DO NOTHING→duplicate=true）+ 坏行跳过计数；GET /api/realtest/sessions 列表 + /{id}/summary 指标聚合（percentile_cont 与 runtime summarize 同形）；E2E 演练 deploy/ros2/e2e_rehearsal.sh（humble 合成源 REHEARSAL_OK；合成源只验管道不产生真实 Gap 结论，如实标注）
