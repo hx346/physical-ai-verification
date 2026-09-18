@@ -107,7 +107,7 @@
           <tbody>
             <tr v-for="(entry, metric) in gapResult.gap" :key="metric">
               <td>{{ metric }}</td>
-              <td>{{ entry.sim ?? '-' }}</td>
+              <td>{{ entry.sim?.toFixed(4) ?? '-' }}</td>
               <td>{{ entry.real?.mean?.toFixed(4) ?? '-' }}</td>
               <td>{{ entry.gap_percent ?? '-' }}</td>
               <td>
