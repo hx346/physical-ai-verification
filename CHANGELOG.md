@@ -7,6 +7,15 @@
 
 ### Added
 
+- **场景库模板族填充 + Reality DB 扩容（2026-09-20，Gate 4 前空窗数据资产积累）**：
+  - **场景库 5 → 15 条，散点变体升级为模板族**：bin_picking 模板下按维度族谱批量实测注册 10 变体（同 seed=42 族内参数逐位可比）——`family:bin-geometry` 几何网格 7 点（450×350~700×500）/ `family:spawn-regime` 堆叠形态 4 点（单层平铺/低堆叠 0.06/高堆叠 0.18/宽散布）/ `family:place-offset` 放置偏移 3 点 / `family:cross` 族间交叉压力点（宽箱+高堆叠+放置偏移）；10/10 run SUCCEEDED 自动注册（auto-sim-{jobKey} 溯源保留），scenario echo 参数指纹逐位回显验证；族标签 SQL 打标（保留 auto 溯源，上轮 4 变体一并归族），`GET /api/scenarios?tag=family:*` 检索全绿
+  - **Reality DB 11 → 13 条，设备覆盖扩至三技术路线**：+Stereolabs ZED 2i（官方 datasheet depth accuracy <1% up to 3m → 30mm@3m 上界，被动立体）+ Orbbec Femto Bolt（官方 <11mm + 0.1% distance → 12mm@1m 工作距上界，ToF）；均官方口径换算，note 显式声明 derived upper bound + 来源，与既有 RealSense 三条（主动立体）构成路线级对照
+  - **87 同步 V15 + 前端走查修复**：backend/frontend 两镜像（157MB）；V15 迁移 success（14→15）、/api/scenarios 可用（空库=数据资产在开发库积累）、前端 200、failures 存量可查
+  - **dev-plan 勾选回填 7 项**：总纲 3 项（一键复现/evidence 链/无 LLM 可跑）+ M0 4 项（栈健康/schema 双语言校验 21 实例 0 失败/seed 幂等/traceId 贯穿）——功能均已满足，属历史勾选未回填；"CI 绿"口径注明失效（CI 有意关闭）；Gate 1/真机接入保持未勾（等外部）
+- **V1.0 后续填充（2026-09-18，dev 3caea01 + e0694ab）**：
+  - **V15 Scenario Registry 场景库容器**：`scenario_instance` 表（label UNIQUE 幂等/scenario echo 全量回显含 fixedGripper/tags 标签检索/来源 jobKey 可追溯）；simulation 摄取自动注册（result.scenario → `auto-sim-{jobKey}`，失败不阻断摄取）+ 手工注册端点；GET /api/scenarios 列表（scene/tag 过滤）与 /{id} 详情（复现=同 scenario+同 seed 重发）。实测填充 4 变体（窄深箱 450×450/宽箱 700×400+偏移/高堆叠 z_span 0.18/单层平铺+放置点偏移）全部 SUCCEEDED 自动注册 + 1 条命名变体。坑：PG jsonb `?` 操作符与 JDBC 占位符冲突——改 `tags @> ?::jsonb` 数组包含
+  - **Reality DB 积累至 11 条**：3 条 literature（RealSense D435 <2%@2m→40mm 上界 / D455 <2%@4m→80mm 上界+Servi2021 交叉佐证 / D405 1.4%@20cm→2.8mm 上界——全部官方口径换算，note 显式声明 "derived upper bound, not measured distribution"+来源）+ demo 会话派生 measured + §23 例/failure 关联
+  - **前端走查收口**：真机页五数据流 API 契约层逐字段比对零缺失（MetricStats/GapEntry 键名全对齐）；随后浏览器全流程复走查绿（Playwright 驱动+截图核验，console 零错误/零 4xx5xx）并修复 ConfigProvider zh_CN locale（空态"暂无数据"/popconfirm 确认按钮汉化）与 Gap 表 sim 列 toFixed(4) 全精度浮点泄漏
 - **V1.0 Real2Sim + Calibrated Asset（2026-09-17/18，五任务全落地 DoD 8/8，tag v1.0.0——商业产品线成型）**：
   - **校准引擎 v1**（`calibration/multi_param.py`）：σ_scale 一维 → 两参数 MLE（网格响应面双线性插值+高斯似然，无 scipy）；profile 95% CI + 不可辨识检测（响应面平坦/耦合如实标 identifiable=false，UNKNOWN 合法不硬给点估计）；**前向仿真与估计器解耦**（引擎吃参数网格点的仿真聚合）；测试驱动修 3 个实现 bug（MLE 权重归一化=信息量稀释 1.4 倍、profile 阈值应比较 -2ΔlnL 差 2 倍、logLik Hessian 负定时条件数须取绝对值）
   - **校准编排**（`POST /api/calibrations`）：网格×repeats 展开 simulation 子 job（DAG 复用，`cal:…:pt{p}:run{r}` 幂等+断点续跑）→ 逐点聚合 → fit → model_version DRAFT 摄取幂等；realObs se 推导（成功率 sqrt(p(1-p)/n)、P95 正态近似 2.11σ/√n）**假设显式入 params.assumptions**、样本<5 不派生；E2E 实测 8 run 561s identifiable=true

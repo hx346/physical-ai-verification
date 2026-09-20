@@ -19,9 +19,9 @@
 
 **总 DoD（Definition of Done）**：
 
-- [ ] 上述 Demo 脚本可从干净环境一键复现（compose up + seed + run）
-- [ ] 每个判定都有 evidence 记录（输入指纹 + 内核版本 + traceId）
-- [ ] 拔掉 LLM 配置，全部核心流程仍可运行
+- [x] 上述 Demo 脚本可从干净环境一键复现（compose up + seed + run）（回填 2026-09-20：v1.0.0 发布口径=demo 默认门控全绿（da55bb6）；干净环境复现随 V15 后多轮本地栈重建验证）
+- [x] 每个判定都有 evidence 记录（输入指纹 + 内核版本 + traceId）（回填 2026-09-20：V0.1 起实现，evidence.ir 含 fingerprint/kernelVersion/assumptions/traceId，历版本回归覆盖）
+- [x] 拔掉 LLM 配置，全部核心流程仍可运行（回填 2026-09-20：LLM 层刻意维持 0 实现（方案审查 2026-09-17，上限 5%），全部核心流程天然无 LLM 依赖）
 - [ ] Gate 1（历史项目回放）完成且 Problem Recall ≥ 70%，否则 STOP（见 §6）
 
 ## 1. 里程碑总览
@@ -58,10 +58,10 @@
 
 ### M0 DoD
 
-- [ ] `docker compose -f deploy/docker-compose.yml up -d` 后 backend `/actuator/health`=UP、runtime `/health`=UP、Flyway 迁移成功
-- [ ] 7 个 Schema 双语言（jsonschema / openapi 校验器）对示例文档校验通过，CI 绿
-- [ ] 种子资产导入脚本幂等（重复执行无副作用）
-- [ ] 一次带 traceId 的请求贯穿 backend→runtime 日志可检索
+- [x] `docker compose -f deploy/docker-compose.yml up -d` 后 backend `/actuator/health`=UP、runtime `/health`=UP、Flyway 迁移成功（回填 2026-09-20：本地栈与 87 多轮重建验证（V1–V15 迁移 success），docker ps 五容器 healthy）
+- [x] Schema 双语言（jsonschema / openapi 校验器）对示例文档校验通过（回填 2026-09-20：ir schema 已 9 个（原计划 7 个），`schemas/tools/validate.py` 本地通过 21 实例 0 失败；openapi/platform-runtime.yaml 手工维护同步。CI 已于 2026-09-15 有意关闭，原"CI 绿"口径失效，以每 W 收尾本地 mvn test + vue-tsc 纪律替代）
+- [x] 种子资产导入脚本幂等（重复执行无副作用）（回填 2026-09-20：seed-demo 多轮重跑验证无副作用；simulation/experiment/calibration 摄取均 job_key 幂等）
+- [x] 一次带 traceId 的请求贯穿 backend→runtime 日志可检索（回填 2026-09-20：demo 各幕 X-Trace-Id 贯穿，平台 Result 响应与 evidence 记录 traceId，历次冒烟均可检索）
 
 ---
 
@@ -788,3 +788,20 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
     **剩余人工 3 分钟清单**（无浏览器自动化工具，留给用户浏览器点检）：①选项目→
     会话列表渲染 ②Drawer summary 聚合表+Gap 三色 verdict/no_sim_counterpart 分支
     ③模型版本 Tab 激活确认弹窗 ④空态（无项目/无会话）渲染。
+
+- 2026-09-20 **场景库模板族填充 + Reality DB 扩容 + 87 同步（Gate 4 前空窗，数据资产主线）**：
+  - **场景库 5 → 15 条（变体→模板族）**：同 seed=42 批量实测 10 变体全部 SUCCEEDED 自动注册——
+    `family:bin-geometry`（450×350 / 450×450 / 500×400 / 650×350 / 700×400 / 700×500 网格 7 点，
+    含上轮 2 变体归族+命名条目）、`family:spawn-regime`（stacking:flat z0.01 / low z0.06 / high
+    z0.18 / scatter:wide y0.06 共 4 点）、`family:place-offset`（(1.35,0.12) / (1.05,-0.12) /
+    上轮 (1.25,0.1) 共 3 点）、`family:cross`（700×500+z0.18+y0.15 压力点）。参数指纹 echo 逐位
+    回显抽查 ✓；族标签 SQL 打标保留 auto 溯源，`?tag=family:*` 检索 7/4/3/1 全绿。
+    一次性脚本 .seed-family.py 已删（配方：POST /api/simulations 带 environment.scenario +
+    摄取自动注册，复现见 schemas/examples/simulation/bin-picking.yaml + 本条参数表）。
+  - **Reality DB 11 → 13 条**：+ ZED 2i（<1% up to 3m → 30mm@3m 上界，被动立体，官方 datasheet）+
+    Femto Bolt（<11mm+0.1%distance → 12mm@1m，ToF，orbbec 官方页）——与 RealSense 三条构成
+    主动立体/ToF/被动三路线对照，全部 derived upper bound 显式声明不冒充实测分布。
+  - **87 同步**：backend（V15）+frontend（走查修复）两镜像 157MB；V15 迁移 success、scenarios/
+    reality API 可用（空库正常）、前端 200、failures 6 条可查。
+  - **勾选回填**：总纲+M0 共 7 项功能早已满足的历史未勾项回填（依据注明）；L62"CI 绿"口径
+    注明失效（CI 2026-09-15 有意关闭）；Gate 1（L25）与真机接入（L153）保持未勾等外部素材。
