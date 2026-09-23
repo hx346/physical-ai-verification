@@ -24,7 +24,7 @@ import java.util.Map;
  * Reality DB 查询面（V1.0 §14 Track B，方案 §23）：设备×环境×任务×指标分布。
  * "这种数据以后比 Prompt 有价值得多"——护城河资产的最小落库。
  *
- * 三入口：
+ * 四入口：
  * ① POST /observations/from-session/{id}：真机会话聚合自动派生（external_key
  *    = reality-session-{sessionId}-{metric} 幂等，重推跳过）；派生上下文
  *    （设备/环境/任务）由录入者声明——会话本身不含设备元数据（V0.8 设计，如实）。
@@ -32,6 +32,8 @@ import java.util.Map;
  *    V9 failure_record（source_failure_id——"失败+修正"入查询面）。
  * ③ GET /observations：过滤查询（deviceModel/metric/task/provenance），failure
  *    关联 LEFT JOIN 展开。
+ * ④ POST /observations/batch：批量导入（2026-09-23，文献/厂商规格规模化入口；
+ *    external_key 必填幂等 + 全批先校验后落库）。
  *
  * provenance CHECK 强校验（literature/measured/calibrated）——calibrated 级由
  * Track D 校准 ACTIVE 回写产生，本控制器不手填。
@@ -42,6 +44,7 @@ public class RealityController {
 
     private static final Logger log = LoggerFactory.getLogger(RealityController.class);
     private static final List<String> PROVENANCE_VALUES = List.of("literature", "measured", "calibrated");
+    private static final int BATCH_MAX = 1000;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -57,7 +60,11 @@ public class RealityController {
 
     public record ManualRequest(String deviceModel, Map<String, Object> environment, String task,
                                 String metric, Double mean, Double p50, Double p95, Integer samples,
-                                String provenance, Long sourceFailureId, String note) {
+                                String provenance, Long sourceFailureId, String note,
+                                String externalKey) {
+    }
+
+    public record BatchRequest(List<ManualRequest> observations) {
     }
 
     /** 真机会话 → 指标分布观测（逐指标一行，幂等 external_key）。 */
@@ -120,47 +127,134 @@ public class RealityController {
     /** 手工录入（文献先验/实测/failure 关联）。calibrated 级走 Track D 回写，此处拒绝。 */
     @PostMapping("/observations")
     public Result<Map<String, Object>> create(@RequestBody ManualRequest request) {
-        if (isBlank(request.task()) || isBlank(request.metric())) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "task/metric 不能为空");
+        String error = validateManual(request, false);
+        if (error != null) {
+            throw new BizException(ErrorCode.BAD_REQUEST, error);
         }
-        if (request.samples() == null || request.samples() <= 0) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "samples 须 > 0");
-        }
-        if (isBlank(request.provenance()) || !PROVENANCE_VALUES.contains(request.provenance())) {
+        checkFailureExists(request.sourceFailureId());
+        List<String> ids = insertObservation(request);
+        if (ids.isEmpty()) {
             throw new BizException(ErrorCode.BAD_REQUEST,
-                    "provenance 须为 " + PROVENANCE_VALUES + " 之一");
+                    "external_key 已存在: " + request.externalKey());
         }
-        if ("calibrated".equals(request.provenance())) {
-            throw new BizException(ErrorCode.BAD_REQUEST,
-                    "calibrated 级由校准 ACTIVE 回写产生（Track D），不支持手工录入");
-        }
-        if (request.mean() == null && request.p50() == null && request.p95() == null) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "mean/p50/p95 至少一个非空");
-        }
-        if (request.sourceFailureId() != null) {
-            Integer failures = jdbcTemplate.queryForObject(
-                    "SELECT count(*) FROM failure_record WHERE id=?",
-                    Integer.class, request.sourceFailureId());
-            if (failures == null || failures == 0) {
-                throw new BizException(ErrorCode.BAD_REQUEST,
-                        "failure_record 不存在: " + request.sourceFailureId());
-            }
-        }
-        String id = jdbcTemplate.queryForObject(
-                "INSERT INTO reality_observation (device_model, environment, task, metric, "
-                        + "mean, p50, p95, samples, provenance, source_failure_id, note) "
-                        + "VALUES (?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id::text",
-                String.class, request.deviceModel(),
-                objectMapper.valueToTree(request.environment() == null
-                        ? Map.of() : request.environment()).toString(),
-                request.task().trim(), request.metric().trim(),
-                request.mean(), request.p50(), request.p95(), request.samples(),
-                request.provenance(), request.sourceFailureId(), request.note());
+        String id = ids.get(0);
+        log.info("reality observation created, id={}, metric={}, provenance={}",
+                id, request.metric(), request.provenance());
         Map<String, Object> out = new HashMap<>();
         out.put("id", id);
         out.put("provenance", request.provenance());
         out.put("metric", request.metric());
         return Result.ok(out);
+    }
+
+    /**
+     * 批量导入（V1.0 后续 2026-09-23：Reality DB 规模化——文献/厂商官方规格归一化入口，
+     * 单条手工 POST 无法支撑护城河量级）。与单条差异：external_key 必填（幂等重放
+     * created=0 全 skipped，不重录）；校验先行，任一条非法整批 400 不留半批；上限 1000。
+     */
+    @PostMapping("/observations/batch")
+    @org.springframework.transaction.annotation.Transactional
+    public Result<Map<String, Object>> createBatch(@RequestBody BatchRequest request) {
+        List<ManualRequest> entries = request.observations();
+        if (entries == null || entries.isEmpty()) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "observations 不能为空");
+        }
+        if (entries.size() > BATCH_MAX) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "单批上限 " + BATCH_MAX + " 条，请分批");
+        }
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < entries.size(); i++) {
+            ManualRequest entry = entries.get(i);
+            String error = validateManual(entry, true);
+            if (error != null) {
+                throw new BizException(ErrorCode.BAD_REQUEST, "第 " + (i + 1) + " 条: " + error);
+            }
+            checkFailureExists(entry.sourceFailureId());
+            if (!seen.add(entry.externalKey().trim())) {
+                throw new BizException(ErrorCode.BAD_REQUEST,
+                        "批内 external_key 重复: " + entry.externalKey());
+            }
+        }
+        int created = 0;
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (ManualRequest entry : entries) {
+            List<String> ids = insertObservation(entry);
+            Map<String, Object> r = new HashMap<>();
+            r.put("externalKey", entry.externalKey().trim());
+            if (ids.isEmpty()) {
+                r.put("created", false);
+            } else {
+                r.put("created", true);
+                r.put("id", ids.get(0));
+                created++;
+            }
+            results.add(r);
+        }
+        log.info("reality batch import: total={}, created={}, skipped={}",
+                entries.size(), created, entries.size() - created);
+        Map<String, Object> out = new HashMap<>();
+        out.put("total", entries.size());
+        out.put("created", created);
+        out.put("skipped", entries.size() - created);
+        out.put("results", results);
+        return Result.ok(out);
+    }
+
+    /** 字段校验（单条/批量共用；批量强制 externalKey）。返回错误信息，null=通过。 */
+    static String validateManual(ManualRequest request, boolean requireExternalKey) {
+        if (isBlank(request.task())) {
+            return "task 不能为空";
+        }
+        if (isBlank(request.metric())) {
+            return "metric 不能为空";
+        }
+        if (request.samples() == null || request.samples() <= 0) {
+            return "samples 须 > 0";
+        }
+        if (isBlank(request.provenance()) || !PROVENANCE_VALUES.contains(request.provenance())) {
+            return "provenance 须为 " + PROVENANCE_VALUES + " 之一";
+        }
+        if ("calibrated".equals(request.provenance())) {
+            return "calibrated 级由校准 ACTIVE 回写产生（Track D），不支持手工录入";
+        }
+        if (request.mean() == null && request.p50() == null && request.p95() == null) {
+            return "mean/p50/p95 至少一个非空";
+        }
+        if (requireExternalKey && isBlank(request.externalKey())) {
+            return "批量导入 externalKey 必填（幂等键，重放跳过不重录）";
+        }
+        return null;
+    }
+
+    /** 落库（ON CONFLICT DO NOTHING：external_key 撞已存在返回空集——无目标形式覆盖
+     *  任一冲突，同 from-session 既有模式）。 */
+    private List<String> insertObservation(ManualRequest request) {
+        String envJson = objectMapper.valueToTree(
+                request.environment() == null ? Map.of() : request.environment()).toString();
+        return jdbcTemplate.query(
+                "INSERT INTO reality_observation (device_model, environment, task, metric, "
+                        + "mean, p50, p95, samples, provenance, source_failure_id, external_key, note) "
+                        + "VALUES (?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        + "ON CONFLICT DO NOTHING RETURNING id::text",
+                (rs, i) -> rs.getString(1),
+                request.deviceModel(), envJson, request.task().trim(), request.metric().trim(),
+                request.mean(), request.p50(), request.p95(), request.samples(),
+                request.provenance(), request.sourceFailureId(),
+                isBlank(request.externalKey()) ? null : request.externalKey().trim(),
+                request.note());
+    }
+
+    private void checkFailureExists(Long sourceFailureId) {
+        if (sourceFailureId == null) {
+            return;
+        }
+        Integer failures = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM failure_record WHERE id=?",
+                Integer.class, sourceFailureId);
+        if (failures == null || failures == 0) {
+            throw new BizException(ErrorCode.BAD_REQUEST,
+                    "failure_record 不存在: " + sourceFailureId);
+        }
     }
 
     /** 分布查询（全过滤项可选；failure 关联 LEFT JOIN 展开修正语境）。 */

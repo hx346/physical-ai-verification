@@ -1,0 +1,12 @@
+# Reality DB batch import template -- REPLACE every placeholder value before use.
+# Rules (honesty requirements, see docs/development-plan.md V1.0 Track B):
+#   - provenance "literature": numbers MUST be converted from official datasheet
+#     wording; note MUST state the original spec, the conversion basis and the
+#     source URL. Derived upper bound != measured distribution -- say so.
+#   - provenance "measured": only for data you actually collected.
+#   - provenance "calibrated" is NOT importable here (produced by calibration
+#     ACTIVE write-back only).
+#   - externalKey convention: {source}-{device}-{distance/condition}-{metric}
+#     (unique per entry; re-import of the same key is a no-op).
+{"externalKey": "datasheet-MODEL-A-2m-position_error_mm", "deviceModel": "MODEL-A", "environment": {"distance_mm": 2000}, "task": "bin_picking", "metric": "position_error_mm", "p95": 0.0, "samples": 1, "provenance": "literature", "note": "REPLACE: official spec '<x%@<dist>' -> <ymm> upper bound, not measured distribution, source: <datasheet URL>"}
+{"externalKey": "bench-MODEL-A-2m-position_error_mm", "deviceModel": "MODEL-A", "environment": {"distance_mm": 2000, "surface": "REPLACE"}, "task": "bin_picking", "metric": "position_error_mm", "mean": 0.0, "p50": 0.0, "p95": 0.0, "samples": 30, "provenance": "measured", "note": "REPLACE: bench session <id/date>, N=<n> runs"}

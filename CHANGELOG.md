@@ -7,6 +7,13 @@
 
 ### Added
 
+- **Reality DB 批量导入管道 + 场景库多 seed 矩阵（2026-09-23，后续需求审查落地）**：
+  - **Reality DB 批量导入**：`POST /api/reality/observations/batch`（external_key 必填幂等 + 全批先校验任一条非法整批 400 + 事务，上限 1000/批；单条/批量共用 validateManual，ManualRequest 新增可选 externalKey）+ `deploy/reality/batch_import.py` JSONL 管道（退出码 0/2/3 同采集器语义）+ 模板与录入纪律 README（literature 官方口径换算 note 必须声明来源；回滚=externalKey 前缀定向 DELETE）。实测 4 条官方规格距离响应点（ZED 2i <1% @1m/2m、Femto Bolt 公式 @1.5m/2m）created=4，重放 skipped=4 幂等；Reality DB 13→17
+  - **场景库跨 seed 分析端点**：`GET /api/scenarios/analysis[?tag=]`——family×seed 聚合（pick_rate Wilson 95% 区间 + 定位误差 mean/P95 + variant 归并键=scenario 去 seed 规范 JSON，键序无关）；上线即暴露既有埋没信号：bin-geometry seeds{42,101,102} pickRate 0.8333 [0.4365,0.9699]、定位 p95 594.5mm 坏点（单 seed 不可见）；手工无 run 实例仅计数不冒充统计
+  - **多 seed 矩阵填充**：14 个有 run 变体 × seed {7,123,2026}（原始 simulation IR 逐字节复用仅换 seed）42/42 SUCCEEDED 自动注册+族标签 SQL 打标，场景库 15→57（bin-geometry 25/spawn-regime 16/place-offset 12/cross 4）；跨 seed 证据：bin-geometry 整体 pickRate 0.7083 [0.5083,0.8509] vs seed42 单 seed 1.0——**原有单 seed 族结论偏乐观被矩阵修正**，seed=7 为压力 seed（三族齐跌）
+  - **单测 27→41**：Wilson 区间边界（n=0/全成功封顶/小样本更宽/对称性）、variant 归并（键序无关/seed 剥离/参数可辨）、批量校验（externalKey 强制/calibrated 拒绝）
+  - **dev-plan §15 外部依赖前置清单立档**（真机型号/话题契约/联调窗口/网络安全/Gate1 素材等前置项与解锁动作一一对应）；§13 V0.9 标注已完结关闭（代码逐项复核 V9-V11/报告 v3/schema 0.2.0/Gate1 四端点在库）
+
 - **场景库模板族填充 + Reality DB 扩容（2026-09-20，Gate 4 前空窗数据资产积累）**：
   - **场景库 5 → 15 条，散点变体升级为模板族**：bin_picking 模板下按维度族谱批量实测注册 10 变体（同 seed=42 族内参数逐位可比）——`family:bin-geometry` 几何网格 7 点（450×350~700×500）/ `family:spawn-regime` 堆叠形态 4 点（单层平铺/低堆叠 0.06/高堆叠 0.18/宽散布）/ `family:place-offset` 放置偏移 3 点 / `family:cross` 族间交叉压力点（宽箱+高堆叠+放置偏移）；10/10 run SUCCEEDED 自动注册（auto-sim-{jobKey} 溯源保留），scenario echo 参数指纹逐位回显验证；族标签 SQL 打标（保留 auto 溯源，上轮 4 变体一并归族），`GET /api/scenarios?tag=family:*` 检索全绿
   - **Reality DB 11 → 13 条，设备覆盖扩至三技术路线**：+Stereolabs ZED 2i（官方 datasheet depth accuracy <1% up to 3m → 30mm@3m 上界，被动立体）+ Orbbec Femto Bolt（官方 <11mm + 0.1% distance → 12mm@1m 工作距上界，ToF）；均官方口径换算，note 显式声明 derived upper bound + 来源，与既有 RealSense 三条（主动立体）构成路线级对照

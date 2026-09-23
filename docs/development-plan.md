@@ -508,7 +508,7 @@ IR 请求的 pick_success / cycle_time_s / collision_count / position_error_mm �
 | 真机仍不可接 | 高 | W2 全部用演练数据开发验证；真机窗口随时插入，仅换话题名 |
 | 前端页与实验页双 Tab 模式冲突 | 低 | 复用实验页 Tab/Drawer 组件模式，不共享状态 |
 
-# 13. V0.9 — Evidence & Failure Intelligence（09-17 并行启动 → 10-15 窗口）
+# 13. V0.9 — Evidence & Failure Intelligence（09-17 并行启动 → 10-15 窗口）【已完结，v0.9.0 已发布（c1deff8）；2026-09-23 代码逐项复核关闭，无遗留排期项】
 
 > 产品路线 §44 修订版新增版本（2026-09-17 方案审查）。**无外部依赖**，与 V0.8 W2 并行。
 > 背景：V0.5 W2/W4 已产生高质量失败取证（六策略探针矩阵/确定性指纹破案/三重真因），
@@ -805,3 +805,76 @@ Track D（runtime）   V0.9 场景参数化 v2         —— 独立（只动 si
     reality API 可用（空库正常）、前端 200、failures 6 条可查。
   - **勾选回填**：总纲+M0 共 7 项功能早已满足的历史未勾项回填（依据注明）；L62"CI 绿"口径
     注明失效（CI 2026-09-15 有意关闭）；Gate 1（L25）与真机接入（L153）保持未勾等外部素材。
+
+# 15. 外部依赖前置清单（2026-09-23 立）
+
+> 背景：Gate 1（L25）与真机接入（L153）是 dev-plan 仅存的两个未勾项，全部卡在外部输入。
+> 本清单把"等外部"拆成明确前置项与解锁动作，防止长期挂起无抓手；代码侧（采集器/导入/
+> Gap/报告链）均已就绪并经演练，接入只剩参数不改代码（deploy/ros2/README §真机接入三步）。
+
+## 真机接入（阻断 L153；代码就绪度=管道 E2E 演练绿，等首个真实部署）
+
+| 前置项 | 具体要求 | 状态 |
+|---|---|---|
+| 真机型号与 ROS 2 版本 | 发行版（Humble/Jazzy 已验容器联调）+ DDS 域 ID 确认 | 待外部 |
+| 话题契约 | /task_result 实际话题名 + 上游按 README §消息格式发布（JSON，单位 mm/秒/毫秒，字段可缺不可编造） | 待外部+现场 |
+| 联调窗口 | ≥1 个采集批次（建议 ≥30 run 才有可读 summary/P95） | 待外部 |
+| 网络与安全 | 采集器宿主机可达平台 18090；只读零 Publisher 边界维持（接入前 grep 审查点） | 现场 |
+| 回归前置 | 接入日先跑 e2e_rehearsal + fake_cell 确认管道无回归 | 已就绪（脚本在库） |
+| 设备元数据 | 会话不含设备/环境元数据（V0.8 设计）——Reality DB 派生时由录入者声明，需提前登记型号/工况 | 流程项 |
+
+## Gate 1 素材（阻断 L25；框架就绪，recall 空态 PENDING 不出结论）
+
+- 10 个历史机器人项目：当时设计资料入库（gate1_case，known_issues 录入后语义不可变）
+- 评审人：known_issues ↔ 平台判定做语义匹配（框架不自动匹配、不编造）
+- 对照锚点：隐藏最终结果的已知问题清单（合成素材不构成 recall——已验证不伪造）
+- 演练结论作废声明：rehearsal- 4 案例 recall=0.667 仅验算法路径，数据已清理
+
+## 其他外部项（非真机链路，登记防遗忘）
+
+| 项 | 阻断 | 状态 |
+|---|---|---|
+| springdoc 上游（Boot4 api-docs 装配） | Swagger UI | 维持钉版等待（3.1.1 无升级路径已核实） |
+| Gate 4 付费 PoC | V2.0 Optimization | 等客户 |
+| Gate 2 素材（专家审核记录） | Gate 2 结论 | 框架空态 PENDING 可跑 |
+| 87 离线同步 | 无（按里程碑手动） | 每版本收尾同步 |
+
+## 2026-09-23 进展记录（后续开发需求审查落地）
+
+- **后续需求审查四点裁决**：①真机链路=最大缺口（本清单立档，见上）；②Reality DB 规模与
+  护城河定位不匹配 → 本轮落批量导入管道；③场景库从族立起来到矩阵铺开 → 本轮落多 seed
+  填充+跨 seed 分析端点；④V0.9 新增项复核 → 代码逐项在库（V9-V11/报告 v3/schema 0.2.0/
+  Gate1 四端点），已完结关闭（§13 标注）。
+- **① Reality DB 批量导入管道**：`POST /api/reality/observations/batch`（external_key 必填
+  幂等 + 全批先校验任一条非法整批 400 不留半批 + 事务 + 上限 1000/批；单条手工路径抽
+  validateManual 共用，externalKey 字段可选共享）；`deploy/reality/batch_import.py`（JSONL→
+  batch，退出码 0/2/3 语义同采集器——2 改文件、3 可重试）+ `examples/template.jsonl` 模板 +
+  README（录入纪律：literature 官方口径换算 note 必须声明来源与口径；回滚=按 externalKey
+  前缀定向 DELETE）。实测：4 条距离响应曲线点（ZED 2i 官方 <1% 规格线 @1m/2m → 10/20mm 上界、
+  Femto Bolt 官方公式 @1.5m/2m → 12.5/13mm 上界，同规格线派生非新事实）created=4；
+  同文件重放 created=0 skipped=4 幂等绿；非法批（缺 metric）整批 400 零落库。Reality DB 13→17。
+- **② 场景库跨 seed 分析端点**：`GET /api/scenarios/analysis[?tag=]`——family×seed 聚合
+  run 结果（pick_rate Wilson 95% 区间 + 定位误差 mean/P95 最近秩 + 节拍均值；variant 归并键
+  =scenario 去 seed 后按 key 递归排序的规范 JSON——auto echo 与手工注册键序无关可归并；
+  手工无 run 实例仅计数不冒充统计）。**上线即暴露既有埋没信号**：bin-geometry 族 seeds
+  {42,101,102}（09-18 旧填充用的 101-104 此前不可见）6 run pickRate=0.8333
+  Wilson[0.4365,0.9699]、定位 p95=594.5mm 坏点——单 seed 视角完全不可见。
+- **③ 多 seed 矩阵填充**：14 个有 run 变体 × 新 seed {7,123,2026}（原始 simulation IR
+  逐字节复用仅换 environment.seed——跨 seed 可比性保证；变体按 scenario-去-seed 键去重），
+  **42/42 SUCCEEDED**（2 sim-worker，单 run 98-187s，wall ~50min），自动注册 + 族标签 SQL
+  打标。场景库 15→**57**（auto 56 + named 1）；族规模 bin-geometry 25 / spawn-regime 16 /
+  place-offset 12 / cross 4。**全矩阵分析结论（诚实）**：seed 敏感真实存在——bin-geometry
+  族整体 pickRate=0.7083 Wilson[0.5083,0.8509]（seed 42=1.0000 / seed 123=0.5000 /
+  seed 102=0.0000，坏 run 定位误差 500-900mm 量级）；seed=7 为压力 seed（三族齐跌：
+  bin-geometry 0.67/spawn-regime 0.50/place-offset 0.67）；cross 族跨 seed pickRate 稳定
+  1.0 但定位误差 9.8-758mm 波动大；**原有单 seed=42 的族级结论偏乐观，多 seed 矩阵
+  完成了修正——这正是本轮"族立起来→矩阵铺开"的目的**。
+- **验证**：mvn test 41 通过（27→41，新增 Wilson 边界/variant 归并/批量校验 14 测试）；
+  全链冒烟（登录→批量导入→幂等重放→分析端点）本地栈全绿。
+- **坑（本轮新增）**：①脚本断点续跑键 vkey 忘含 seed → 每 variant 只提交首个 seed（修复：
+  vkey 追加 seed 段）；②Python 输出重定向块缓冲 → 后台日志空（DB 查 job_queue 状态为准）；
+  ③Docker Desktop daemon 整栈掉线再踩（npipe 消失 → 重启 Docker Desktop 恢复）；
+  ④backend 容器重建后 Sa-Token 失效 → 后台脚本持旧 token 轮询全部 401 被 except 吞成
+  pending（表象=状态卡住；处置=杀进程+state 键迁移到新方案+新 token 续跑）；
+  ⑤分析端点 tag 分支 SQL 引用不存在的 si 别名（tag-filter 冒烟才暴露——**带过滤参数的
+  分支必须单独冒烟**）；⑥bash 双引号会吞 PowerShell 的 $_（内联 PowerShell 用单引号包）。
