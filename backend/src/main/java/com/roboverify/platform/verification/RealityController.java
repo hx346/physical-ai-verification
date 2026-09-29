@@ -6,6 +6,7 @@ import com.roboverify.platform.common.exception.BizException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -44,14 +45,22 @@ public class RealityController {
 
     private static final Logger log = LoggerFactory.getLogger(RealityController.class);
     private static final List<String> PROVENANCE_VALUES = List.of("literature", "measured", "calibrated");
-    private static final int BATCH_MAX = 1000;
+    /** 列宽对齐 V12 reality_observation——超宽若不前置校验，批中途 INSERT 截断异常
+     *  会整批回滚成含糊 500，而不是承诺的"第 i 条 400"。 */
+    private static final int LEN_DEVICE_MODEL = 128;
+    private static final int LEN_TASK = 128;
+    private static final int LEN_METRIC = 64;
+    private static final int LEN_EXTERNAL_KEY = 256;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final int batchMax;
 
-    public RealityController(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public RealityController(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+            @Value("${roboverify.reality.batch-max:1000}") int batchMax) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.batchMax = batchMax;
     }
 
     /** 会话派生上下文：由录入者声明（会话不含设备元数据）。task 必填。 */
@@ -73,6 +82,12 @@ public class RealityController {
                                                    @RequestBody FromSessionRequest request) {
         if (request.task() == null || request.task().isBlank()) {
             throw new BizException(ErrorCode.BAD_REQUEST, "task 不能为空（会话不含任务元数据，由录入者声明）");
+        }
+        if (request.task().trim().length() > LEN_TASK) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "task 长度须 ≤ " + LEN_TASK);
+        }
+        if (request.deviceModel() != null && request.deviceModel().trim().length() > LEN_DEVICE_MODEL) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "deviceModel 长度须 ≤ " + LEN_DEVICE_MODEL);
         }
         Integer sessions = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM real_test_session WHERE id=?::uuid",
@@ -159,22 +174,26 @@ public class RealityController {
         if (entries == null || entries.isEmpty()) {
             throw new BizException(ErrorCode.BAD_REQUEST, "observations 不能为空");
         }
-        if (entries.size() > BATCH_MAX) {
-            throw new BizException(ErrorCode.BAD_REQUEST, "单批上限 " + BATCH_MAX + " 条，请分批");
+        if (entries.size() > batchMax) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "单批上限 " + batchMax + " 条，请分批");
         }
         java.util.Set<String> seen = new java.util.HashSet<>();
+        Map<Long, Integer> failureIdx = new HashMap<>();
         for (int i = 0; i < entries.size(); i++) {
             ManualRequest entry = entries.get(i);
             String error = validateManual(entry, true);
             if (error != null) {
                 throw new BizException(ErrorCode.BAD_REQUEST, "第 " + (i + 1) + " 条: " + error);
             }
-            checkFailureExists(entry.sourceFailureId());
+            if (entry.sourceFailureId() != null) {
+                failureIdx.putIfAbsent(entry.sourceFailureId(), i);
+            }
             if (!seen.add(entry.externalKey().trim())) {
                 throw new BizException(ErrorCode.BAD_REQUEST,
                         "批内 external_key 重复: " + entry.externalKey());
             }
         }
+        checkFailuresExist(failureIdx);
         int created = 0;
         List<Map<String, Object>> results = new ArrayList<>();
         for (ManualRequest entry : entries) {
@@ -202,11 +221,23 @@ public class RealityController {
 
     /** 字段校验（单条/批量共用；批量强制 externalKey）。返回错误信息，null=通过。 */
     static String validateManual(ManualRequest request, boolean requireExternalKey) {
+        if (request == null) {
+            return "请求体不能为空";
+        }
         if (isBlank(request.task())) {
             return "task 不能为空";
         }
+        if (request.task().trim().length() > LEN_TASK) {
+            return "task 长度须 ≤ " + LEN_TASK;
+        }
         if (isBlank(request.metric())) {
             return "metric 不能为空";
+        }
+        if (request.metric().trim().length() > LEN_METRIC) {
+            return "metric 长度须 ≤ " + LEN_METRIC;
+        }
+        if (!isBlank(request.deviceModel()) && request.deviceModel().trim().length() > LEN_DEVICE_MODEL) {
+            return "deviceModel 长度须 ≤ " + LEN_DEVICE_MODEL;
         }
         if (request.samples() == null || request.samples() <= 0) {
             return "samples 须 > 0";
@@ -222,6 +253,9 @@ public class RealityController {
         }
         if (requireExternalKey && isBlank(request.externalKey())) {
             return "批量导入 externalKey 必填（幂等键，重放跳过不重录）";
+        }
+        if (!isBlank(request.externalKey()) && request.externalKey().trim().length() > LEN_EXTERNAL_KEY) {
+            return "externalKey 长度须 ≤ " + LEN_EXTERNAL_KEY;
         }
         return null;
     }
@@ -254,6 +288,24 @@ public class RealityController {
         if (failures == null || failures == 0) {
             throw new BizException(ErrorCode.BAD_REQUEST,
                     "failure_record 不存在: " + sourceFailureId);
+        }
+    }
+
+    /** 批内 failure 关联一次查齐（逐条 count 会把往返放大到每批千次，拉长事务
+     *  窗口）；任一缺失整批 400，报首个引用条目序号。键=failureId，值=首个引用下标。 */
+    private void checkFailuresExist(Map<Long, Integer> failureIdx) {
+        if (failureIdx.isEmpty()) {
+            return;
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(failureIdx.size(), "?"));
+        java.util.Set<Long> existing = new java.util.HashSet<>(jdbcTemplate.query(
+                "SELECT id FROM failure_record WHERE id IN (" + placeholders + ")",
+                (rs, i) -> rs.getLong(1), failureIdx.keySet().toArray()));
+        for (Map.Entry<Long, Integer> e : failureIdx.entrySet()) {
+            if (!existing.contains(e.getKey())) {
+                throw new BizException(ErrorCode.BAD_REQUEST,
+                        "第 " + (e.getValue() + 1) + " 条: failure_record 不存在: " + e.getKey());
+            }
         }
     }
 

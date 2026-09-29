@@ -53,6 +53,9 @@ roboverify:
       username: ${ROBOVERIFY_SEAFILE_USER:}
       password: ${ROBOVERIFY_SEAFILE_PASSWORD:}
       base-path: ${ROBOVERIFY_SEAFILE_BASE_PATH:/roboverify}
+  # Reality DB 批量导入单批上限（全批一个事务——容量阈值防大事务，可按部署调优）
+  reality:
+    batch-max: ${ROBOVERIFY_REALITY_BATCH_MAX:1000}
 
 logging:
   level:

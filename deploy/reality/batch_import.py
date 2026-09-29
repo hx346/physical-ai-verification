@@ -16,6 +16,7 @@ ASCII only on purpose (git-bash heredoc/GBK lesson, see deploy/demo notes).
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -36,9 +37,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--file", required=True, help="JSONL file, one observation per line")
     ap.add_argument("--api-endpoint", required=True, help="e.g. http://localhost:18090")
-    ap.add_argument("--token", help="bare auth token (alternative to username/password)")
+    ap.add_argument("--token", help="bare auth token (or set ROBOVERIFY_TOKEN env)")
     ap.add_argument("--username")
-    ap.add_argument("--password")
+    ap.add_argument("--password", help="prefer ROBOVERIFY_PASSWORD env over this flag "
+                                       "(CLI args persist in shell history / process lists)")
     args = ap.parse_args()
 
     entries = []
@@ -61,14 +63,16 @@ def main():
         print("no entries found in %s" % args.file, file=sys.stderr)
         return 2
 
-    token = args.token
+    token = args.token or os.environ.get("ROBOVERIFY_TOKEN")
     if not token:
-        if not (args.username and args.password):
-            print("need --token or --username/--password", file=sys.stderr)
+        password = args.password or os.environ.get("ROBOVERIFY_PASSWORD")
+        if not (args.username and password):
+            print("need --token (or ROBOVERIFY_TOKEN env) or --username + password "
+                  "(--password flag or ROBOVERIFY_PASSWORD env)", file=sys.stderr)
             return 2
         try:
             login = http_json("POST", args.api_endpoint.rstrip("/") + "/api/auth/login",
-                              {"username": args.username, "password": args.password}, None)
+                              {"username": args.username, "password": password}, None)
             token = login["data"]["token"]
         except (urllib.error.URLError, KeyError, ValueError) as e:
             print("login failed: %s" % e, file=sys.stderr)
@@ -80,6 +84,11 @@ def main():
                          {"observations": entries}, token)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")
+        if e.code >= 500:
+            # server-side failure: batch is transactional (nothing partially imported),
+            # retry is safe -> exit 3 per contract, not "fix the file"
+            print("server error (HTTP %d, retryable): %s" % (e.code, body), file=sys.stderr)
+            return 3
         print("rejected (HTTP %d): %s" % (e.code, body), file=sys.stderr)
         return 2
     except urllib.error.URLError as e:
@@ -92,9 +101,8 @@ def main():
     for r in data.get("results") or []:
         if not r.get("created"):
             print("  skipped (existing externalKey): %s" % r.get("externalKey"))
-    if data.get("created", 0) != data.get("total", 0) and data.get("skipped", 0) == 0 \
-            and data.get("total", 0) > 0:
-        return 2
+    # HTTP 200 means the server accepted the whole batch; its skipped count always
+    # equals total - created, so no partial-failure exit-2 branch is reachable here.
     return 0
 
 

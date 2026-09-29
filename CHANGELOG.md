@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **/code-review ultra 修复（2026-09-29，P0×4 + P1×3 + P2×4，Service 层化 1 项缓议）**：
+  - **analysis 端点抗坏行**：scenario JSON 缺数字 seed（如字符串 seed echo）时 `TreeMap.computeIfAbsent(null)` NPE 曾让 `GET /api/scenarios/analysis` 被单条坏行持续毒化 500——bySeed 改 HashMap（输出排序仍 null 末位）；tag 含反斜杠/引号曾产出非法 jsonb → PG 500——list/analysis 两处手拼 JSON 收敛为 `tagFilterJson`（objectMapper 序列化完整转义）
+  - **批量导入契约修复**：`[null]` 元素曾 NPE 500——validateManual 前置请求体判空（单条/批量共用，批内报"第 i 条"400）；externalKey(256)/task(128)/metric(64)/deviceModel(128) 超列宽曾批中途 INSERT 截断整批回滚 500——前置长度校验（宽度常量对齐 V12，from-session 派生路径同补）
+  - **统计诚实性**：analysis INNER JOIN 曾让 job_queue 已修剪实例从统计中彻底消失（不算 run 也不算无 run）——LEFT JOIN + 响应新增 `instancesJobMissing`（变体保留计数、run 不冒充失败）；variantKey 数字类型不归一（600≠600.0 虚增变体数）——BigDecimal stripTrailingZeros 归一（含指数记法与超 long 整数）
+  - **batch_import.py**：HTTP 5xx 误报 exit 2（诱导改文件）→ exit 3（可重试，与 README/dev-plan 契约一致——批是事务性的不会半批落库）；不可达 exit 2 分支删除；新增 ROBOVERIFY_TOKEN/ROBOVERIFY_PASSWORD 环境变量（--password 留 shell history/ps 的泄密面，README 改推荐 token/env 用法）
+  - **性能/配置**：批内 failure 关联 N+1 count（每批最多千次往返拉长事务）→ 单条 `IN` 查齐（缺失报首个引用"第 i 条"整批 400）；BATCH_MAX 硬编码 → `roboverify.reality.batch-max`（默认 1000，env ROBOVERIFY_REALITY_BATCH_MAX）
+  - 单测 41→50（null seed 回归/数字归一×2/tagFilterJson 转义/null 请求体/长度边界×4）；Controller 保留 @Transactional+JDBC 直查（与全库既有风格一致，Service 层化留待统一重构）
+
 ### Added
 
 - **Reality DB 批量导入管道 + 场景库多 seed 矩阵（2026-09-23，后续需求审查落地）**：

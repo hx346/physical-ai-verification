@@ -21,15 +21,21 @@ GET /api/reality/observations?deviceModel=&metric=   （报告/校准引擎引�
 ## 用法
 
 ```bash
+# 推荐 token 方式（bare token 无 Bearer 前缀；或 export ROBOVERIFY_TOKEN 后省略 --token）
 python3 deploy/reality/batch_import.py \
   --file deploy/reality/examples/template.jsonl \
   --api-endpoint http://localhost:18090 \
-  --username admin --password '...'
-# 或 --token <bare token>（无 Bearer 前缀）
+  --token '...'
+
+# 用户名/口令方式：口令走环境变量——--password 会留在 shell history 与 ps 进程列表里
+export ROBOVERIFY_PASSWORD='...'
+python3 deploy/reality/batch_import.py \
+  --file deploy/reality/examples/template.jsonl \
+  --api-endpoint http://localhost:18090 --username admin
 ```
 
-- 退出码：0 成功；2 文件被拒（看 stderr 里的响应，改文件）；3 网络/服务端错误
-  （可重试，不会半批落库）。
+- 退出码：0 成功；2 文件被拒（HTTP 4xx——看 stderr 里的响应，改文件）；3 网络/
+  服务端错误（不可达或 HTTP 5xx——可重试，批量是事务性的不会半批落库）。
 - **幂等**：同文件重放 → `created=0 skipped=N`（external_key 部分唯一索引）。
 - 上限 1000 条/批，超出分批。
 - 模板：`examples/template.jsonl`（占位值，必须替换后使用）。

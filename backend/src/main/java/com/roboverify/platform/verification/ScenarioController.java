@@ -67,7 +67,7 @@ public class ScenarioController {
         if (tag != null && !tag.isBlank()) {
             // jsonb 的 ? 操作符与 JDBC 占位符冲突（PG JDBC 需 ?? 转义）——改数组包含
             where.append(" AND tags @> ?::jsonb");
-            args.add("[\"" + tag.trim().replace("\"", "") + "\"]");
+            args.add(tagFilterJson(tag));
         }
         args.add(Math.min(Math.max(limit, 1), 200));
         List<Map<String, Object>> rows = jdbcTemplate.query(
@@ -153,7 +153,8 @@ public class ScenarioController {
      * 聚合 run 结果：pick_rate Wilson 95% 区间 + 定位误差分布。
      * 数据源=scenario_instance.source_job_key ↔ job_queue.result.metrics
      * （自动注册仅发生于 SUCCEEDED 摄取，FAILED run 无场景实例，如实）；手工注册
-     * 无 run 的实例不参与统计，仅计数呈现。
+     * 无 run 的实例不参与统计，仅计数呈现；job_queue 行已修剪（无 FK）的实例
+     * LEFT JOIN 保留——变体计数，run 不冒充失败，计 instancesJobMissing。
      */
     @GetMapping("/analysis")
     public Result<Map<String, Object>> analysis(@RequestParam(required = false) String tag) {
@@ -161,18 +162,20 @@ public class ScenarioController {
         List<Object> args = new ArrayList<>();
         if (tag != null && !tag.isBlank()) {
             tagFilter = " AND si.tags @> ?::jsonb";
-            args.add("[\"" + tag.trim().replace("\"", "") + "\"]");
+            args.add(tagFilterJson(tag));
         }
         List<Map<String, Object>> rows = jdbcTemplate.query(
                 "SELECT si.tags::text AS tagsJson, si.scenario::text AS scenarioJson, "
+                        + "j.job_key AS jobKey, "
                         + "j.payload->'result'->'metrics'->>'pick_success' AS pickSuccess, "
                         + "j.payload->'result'->'metrics'->>'position_error_mm' AS positionErrorMm, "
                         + "j.payload->'result'->'metrics'->>'cycle_time_s' AS cycleTimeS "
-                        + "FROM scenario_instance si JOIN job_queue j ON j.job_key = si.source_job_key "
+                        + "FROM scenario_instance si LEFT JOIN job_queue j ON j.job_key = si.source_job_key "
                         + "WHERE si.source_job_key IS NOT NULL" + tagFilter,
                 (rs, i) -> {
                     Map<String, Object> m = new HashMap<>();
                     m.put("tagsJson", rs.getString("tagsJson"));
+                    m.put("jobKey", rs.getString("jobKey"));
                     m.put("scenarioJson", rs.getString("scenarioJson"));
                     m.put("pickSuccess", rs.getString("pickSuccess"));
                     m.put("positionErrorMm", rs.getString("positionErrorMm"));
@@ -181,6 +184,7 @@ public class ScenarioController {
                 }, args.toArray());
 
         Map<String, FamilyAcc> families = new TreeMap<>();
+        int jobMissing = 0;
         for (Map<String, Object> row : rows) {
             String family = readList((String) row.get("tagsJson")).stream()
                     .filter(t -> t.startsWith("family:")).findFirst().orElse("untagged");
@@ -188,6 +192,12 @@ public class ScenarioController {
             Long seed = scenario.path("seed").isNumber() ? scenario.path("seed").asLong() : null;
             FamilyAcc fa = families.computeIfAbsent(family, k -> new FamilyAcc());
             fa.variants.add(variantKey(scenario));
+            if (row.get("jobKey") == null) {
+                // job_queue 行已修剪（无 FK）：实例仍在库——变体保留计数，run 统计
+                // 不冒充（不按失败计），单独如实计数
+                jobMissing++;
+                continue;
+            }
             RunAcc ra = fa.bySeed.computeIfAbsent(seed, k -> new RunAcc());
             ra.n++;
             Double pick = parseDouble((String) row.get("pickSuccess"));
@@ -240,6 +250,7 @@ public class ScenarioController {
         Map<String, Object> out = new HashMap<>();
         out.put("families", familyList);
         out.put("instancesWithoutRun", noRun == null ? 0 : noRun);
+        out.put("instancesJobMissing", jobMissing);
         return Result.ok(out);
     }
 
@@ -268,7 +279,8 @@ public class ScenarioController {
     }
 
     /** variant 身份键：scenario 去 seed 后按 key 递归排序的规范 JSON——同变体不同
-     *  来源（auto-sim echo / 手工注册）键序不同也能归并，多 seed 重跑不虚增 variants。 */
+     *  来源（auto-sim echo / 手工注册）键序不同、数字类型不同（600 与 600.0）也能
+     *  归并，多 seed 重跑不虚增 variants。 */
     static String variantKey(JsonNode scenario) {
         JsonNode copy = scenario.deepCopy();
         if (copy.isObject()) {
@@ -277,8 +289,20 @@ public class ScenarioController {
         return sorted(copy).toString();
     }
 
-    /** 递归按 key 排序（Object 内字段名，Array 保序——数组语义有序）。 */
+    /** 递归按 key 排序（Object 内字段名，Array 保序——数组语义有序；数字类型归一
+     *  ——600/600.0/6e2 同值同键，手工 int 与 echo float 不虚增 variants）。 */
     private static JsonNode sorted(JsonNode node) {
+        if (node.isNumber()) {
+            java.math.BigDecimal d = node.decimalValue().stripTrailingZeros();
+            if (d.scale() <= 0) {
+                try {
+                    return CANONICAL.getNodeFactory().numberNode(d.longValueExact());
+                } catch (ArithmeticException e) {
+                    // 整数值超 long 精度（如 1e20）——BigDecimal 表示，同值仍同键
+                }
+            }
+            return CANONICAL.getNodeFactory().numberNode(d);
+        }
         if (node.isObject()) {
             ObjectNode out = CANONICAL.createObjectNode();
             List<String> names = new ArrayList<>();
@@ -342,6 +366,12 @@ public class ScenarioController {
         return Math.round(v * 1e4) / 1e4;
     }
 
+    /** tags 数组包含过滤参数：objectMapper 序列化做完整转义——手拼 JSON 漏转义
+     *  反斜杠会产出非法 jsonb（PG invalid input syntax → 500）。 */
+    static String tagFilterJson(String tag) {
+        return CANONICAL.valueToTree(List.of(tag.trim())).toString();
+    }
+
     private JsonNode readTree(String json) {
         try {
             return objectMapper.readTree(json == null ? "{}" : json);
@@ -351,7 +381,7 @@ public class ScenarioController {
     }
 
     /** 分析聚合的内存累加器（族内按 seed 分桶，overall 由 merge 汇总）。 */
-    private static class RunAcc {
+    static class RunAcc {
         int n;
         int successes;
         final List<Double> positionErrors = new ArrayList<>();
@@ -365,9 +395,12 @@ public class ScenarioController {
         }
     }
 
-    private static class FamilyAcc {
+    static class FamilyAcc {
         final java.util.Set<String> variants = new java.util.HashSet<>();
-        final Map<Long, RunAcc> bySeed = new TreeMap<>();
+        // HashMap 容忍 null key（scenario JSON 缺数字 seed 时 seed=null）——TreeMap
+        // computeIfAbsent(null) 直接 NPE，单条坏行曾毒化整个 analysis 端点成 500；
+        // 输出排序交给 seeds.sort 的 null 末位比较器
+        final Map<Long, RunAcc> bySeed = new HashMap<>();
     }
 
     private Map<String, Object> readMap(String json) {

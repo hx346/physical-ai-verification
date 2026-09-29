@@ -67,4 +67,41 @@ class RealityControllerValidationTest {
                 entry("bin_picking", "position_error_mm", 8.4, 100, "literature",
                         "datasheet-d455-2m-upper"), true));
     }
+
+    @Test
+    void nullRequestRejected() {
+        // 回归：批量 body 含 null 元素曾 NPE 500——现整批 400"第 i 条: 请求体不能为空"
+        assertTrue(RealityController.validateManual(null, true).contains("不能为空"));
+    }
+
+    @Test
+    void overlongExternalKeyRejected() {
+        assertTrue(RealityController.validateManual(
+                entry("bin_picking", "position_error_mm", 8.4, 100, "literature", "k".repeat(257)), true)
+                .contains("externalKey"));
+        assertNull(RealityController.validateManual(
+                entry("bin_picking", "position_error_mm", 8.4, 100, "literature", "k".repeat(256)), true));
+    }
+
+    @Test
+    void overlongTaskRejected() {
+        assertTrue(RealityController.validateManual(
+                entry("t".repeat(129), "position_error_mm", 8.4, 100, "literature", null), false)
+                .contains("task"));
+    }
+
+    @Test
+    void overlongMetricRejected() {
+        assertTrue(RealityController.validateManual(
+                entry("bin_picking", "m".repeat(65), 8.4, 100, "literature", null), false)
+                .contains("metric"));
+    }
+
+    @Test
+    void overlongDeviceModelRejected() {
+        RealityController.ManualRequest r = new RealityController.ManualRequest(
+                "d".repeat(129), Map.of(), "bin_picking", "position_error_mm",
+                null, null, 8.4, 100, "literature", null, null, null);
+        assertTrue(RealityController.validateManual(r, false).contains("deviceModel"));
+    }
 }
